@@ -53,6 +53,7 @@ public struct ArticleCounts: Sendable {
 	public nonisolated let databasePath: String
 
 	private let articlesTable: ArticlesTable
+	private let translationsTable: TranslationsTable
 	private let queue: DatabaseQueue
 	private let operationQueue = MainThreadOperationQueue()
 	private let retentionStyle: RetentionStyle
@@ -67,6 +68,7 @@ public struct ArticleCounts: Sendable {
 		let queue = DatabaseQueue(databasePath: databaseFilePath)
 		self.queue = queue
 		self.articlesTable = ArticlesTable(name: DatabaseTableName.articles, accountID: accountID, queue: queue, retentionStyle: retentionStyle)
+		self.translationsTable = TranslationsTable(queue: queue)
 		self.retentionStyle = retentionStyle
 		self.accountID = accountID
 
@@ -394,10 +396,49 @@ public struct ArticleCounts: Sendable {
 	// MARK: - Caches
 
 	/// Call to free up some memory. Should be done when the app is backgrounded, for instance.
-	/// This does not empty *all* caches — just the ones that are empty-able.
+	/// This does not empty *all* caches — just the ones that are empty-able.
 	public func emptyCaches() {
 		Self.logger.debug("ArticlesDatabase: \(#function, privacy: .public) \(self.accountID, privacy: .public)")
 		articlesTable.emptyCaches()
+	}
+
+	// MARK: - Translations
+
+	/// Look up a cached translation. Returns `nil` if no entry exists for
+	/// `(articleID, targetLanguage, bodySource)`.
+	public func fetchTranslation(
+		articleID: String,
+		targetLanguage: String,
+		bodySource: ArticleTranslation.BodySource
+	) -> ArticleTranslation? {
+		translationsTable.fetchTranslation(
+			articleID: articleID,
+			targetLanguage: targetLanguage,
+			bodySource: bodySource
+		)
+	}
+
+	/// Insert or replace a translation. Idempotent on the cache key.
+	public func upsertTranslation(_ translation: ArticleTranslation) {
+		Self.logger.debug("ArticlesDatabase: \(#function, privacy: .public) \(self.accountID, privacy: .public)")
+		translationsTable.upsertTranslation(translation)
+	}
+
+	/// Delete a single cached translation. Used when the user explicitly
+	/// retries a failed translation.
+	public func deleteTranslation(
+		articleID: String,
+		targetLanguage: String,
+		bodySource: ArticleTranslation.BodySource
+	) {
+		queue.runInTransaction { database in
+			self.translationsTable.deleteTranslation(
+				articleID: articleID,
+				targetLanguage: targetLanguage,
+				bodySource: bodySource,
+				database: database
+			)
+		}
 	}
 
 	// MARK: - Cleanup
@@ -430,9 +471,15 @@ private extension ArticlesDatabase {
 
 	CREATE INDEX if not EXISTS statuses_starred_index on statuses (starred);
 
+	CREATE TABLE if not EXISTS translations (articleID TEXT NOT NULL, targetLanguage TEXT NOT NULL, bodySource TEXT NOT NULL, title TEXT NOT NULL, translationBody TEXT NOT NULL, engine TEXT NOT NULL, translatedAt REAL NOT NULL, PRIMARY KEY (articleID, targetLanguage, bodySource));
+
+	CREATE INDEX if not EXISTS translations_articleID on translations (articleID);
+
 	CREATE VIRTUAL TABLE if not EXISTS search using fts4(title, body);
 
 	CREATE TRIGGER if not EXISTS articles_after_delete_trigger_delete_search_text after delete on articles begin delete from search where rowid = OLD.searchRowID; end;
+
+	CREATE TRIGGER if not EXISTS articles_after_delete_trigger_delete_translations after delete on articles begin delete from translations where articleID = OLD.articleID; end;
 	"""
 
 	func todayCutoffDate() -> Date {

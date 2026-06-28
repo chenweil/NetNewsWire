@@ -91,6 +91,10 @@ final class DetailViewController: NSViewController, WKUIDelegate {
 		currentWebViewController.stopMediaPlayback()
 	}
 
+	func translateCurrentArticle() {
+		currentWebViewController.translateCurrentArticle()
+	}
+
 	func canScrollDown() async -> Bool {
 		await currentWebViewController.canScrollDown()
 	}

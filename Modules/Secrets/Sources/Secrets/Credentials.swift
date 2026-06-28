@@ -61,6 +61,9 @@ public enum CredentialsType: String, Sendable {
 	case oauthAccessToken = "oauthAccessToken"
 	case oauthAccessTokenSecret = "oauthAccessTokenSecret"
 	case oauthRefreshToken = "oauthRefreshToken"
+	/// API key for the OpenAI-compatible translation engine. The username is
+	/// unused; only the `secret` field is consulted by `TranslationSettings`.
+	case openAICompatibleAPIKey = "openaiCompatibleAPIKey"
 }
 
 nonisolated public struct Credentials: Equatable, Sendable {

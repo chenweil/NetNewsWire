@@ -25,6 +25,7 @@ private struct ToolbarItemIdentifier {
 	static let General = "General"
 	static let Accounts = "Accounts"
 	static let Advanced = "Advanced"
+	static let Translation = "Translation"
 }
 
 final class PreferencesWindowController: NSWindowController, NSToolbarDelegate {
@@ -42,6 +43,9 @@ final class PreferencesWindowController: NSWindowController, NSToolbarDelegate {
 		specs += [PreferencesToolbarItemSpec(identifierRawValue: ToolbarItemIdentifier.Advanced,
 											 name: NSLocalizedString("Advanced", comment: "Preferences"),
 											 image: Assets.Images.preferencesToolbarAdvanced)]
+		specs += [PreferencesToolbarItemSpec(identifierRawValue: ToolbarItemIdentifier.Translation,
+											 name: NSLocalizedString("Translation", comment: "Preferences"),
+											 image: NSImage(systemSymbolName: "character.bubble", accessibilityDescription: "Translation"))]
 		return specs
 	}()
 

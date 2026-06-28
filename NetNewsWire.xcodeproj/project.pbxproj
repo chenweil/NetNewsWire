@@ -993,6 +993,7 @@
 				4679674525E599C100844E8D /* Articles */,
 				848E84D12DB7495C0023F3BA /* RSCore */,
 				8424B3202DB73D4C0053AA11 /* RSParser */,
+				513277602590FC640064F1E7 /* ArticlesDatabase */,
 			);
 			productName = NetNewsWireTests;
 			productReference = 849C64711ED37A5D003D8FC0 /* NetNewsWireTests.xctest */;

@@ -244,6 +244,10 @@ public enum FetchType {
 	let database: ArticlesDatabase
 	var delegate: AccountDelegate
 
+	public var articlesDatabase: ArticlesDatabase {
+		database
+	}
+
 	private var unreadCounts = [String: Int]() // [feedID: Int]
 
 	private var _flattenedFeeds = Set<Feed>()

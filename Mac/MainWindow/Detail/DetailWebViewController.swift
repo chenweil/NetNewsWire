@@ -12,6 +12,8 @@ import RSCore
 import RSWeb
 import Articles
 import Images
+import ArticlesDatabase
+import Account
 
 @MainActor protocol DetailWebViewControllerDelegate: AnyObject {
 	func mouseDidEnter(_: DetailWebViewController, link: String)
@@ -22,6 +24,33 @@ final class DetailWebViewController: NSViewController {
 
 	weak var delegate: DetailWebViewControllerDelegate?
 	var webView: DetailWebView!
+
+	// MARK: - Translation Support
+
+	/// Translation coordinator for translating articles. Injected dependency for testing.
+	var translationCoordinator: TranslationCoordinator?
+
+	/// Current translation status. Observable by UI.
+	var translationStatus: TranslationStatus = .idle {
+		didSet {
+			guard isViewLoaded else { return }
+			reloadHTMLMaintainingScrollPosition()
+		}
+	}
+
+	// MARK: - Initialization
+
+	/// Creates a DetailWebViewController with an optional translation coordinator.
+	/// - Parameter translationCoordinator: The coordinator to use for translation. Pass nil to disable translation.
+	init(translationCoordinator: TranslationCoordinator? = nil) {
+		self.translationCoordinator = translationCoordinator
+		super.init(nibName: nil, bundle: nil)
+	}
+
+	required init?(coder: NSCoder) {
+		fatalError("init(coder:) has not been implemented")
+	}
+
 	var state: DetailState = .noSelection {
 		didSet {
 			if state != oldValue {
@@ -31,7 +60,12 @@ final class DetailWebViewController: NSViewController {
 				default:
 					break
 				}
-				reloadHTML()
+				// Only reload HTML if the view is loaded
+				if isViewLoaded {
+					reloadHTML()
+				}
+				// Trigger translation for new articles
+				requestTranslationIfNeeded()
 			}
 		}
 	}
@@ -152,6 +186,21 @@ final class DetailWebViewController: NSViewController {
 
 	func stopMediaPlayback() {
 		webView.evaluateJavaScript("stopMediaPlayback();")
+	}
+
+	func translateCurrentArticle() {
+		guard let article = article,
+			  let account = AccountManager.shared.existingAccount(accountID: article.accountID) else {
+			return
+		}
+
+		translationCoordinator = TranslationCoordinator.live(articlesDatabase: account.articlesDatabase)
+
+		if case .failed = translationStatus {
+			retryTranslation()
+		} else {
+			requestTranslationIfNeeded()
+		}
 	}
 
 	// MARK: Scrolling
@@ -311,13 +360,131 @@ private extension DetailWebViewController {
 			"title": rendering.title,
 			"baseURL": rendering.baseURL,
 			"style": rendering.style,
-			"body": rendering.html
+			"body": htmlForCurrentTranslationStatus(rendering.html)
 		]
 
 		var html = try! MacroProcessor.renderedText(withTemplate: ArticleRenderer.page.html, substitutions: substitutions)
 		html = ArticleRenderingSpecialCases.filterHTMLIfNeeded(baseURL: rendering.baseURL, html: html)
 		WebViewConfiguration.addContentBlockingRules(to: webView)
 		webView.loadHTMLString(html, baseURL: URL(string: rendering.baseURL))
+	}
+
+	func htmlForCurrentTranslationStatus(_ articleHTML: String) -> String {
+		switch translationStatus {
+		case .idle:
+			return articleHTML
+		case .translating:
+			return """
+			<div class="translationStatus">\(NSLocalizedString("Translating...", comment: "Translation status"))</div>
+			\(articleHTML)
+			"""
+		case .translated(let translation):
+			let titleHTML: String
+			if translation.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+				titleHTML = ""
+			} else {
+				titleHTML = """
+				<div class="articleTitle"><h1>\(translation.title.escapedHTML)</h1></div>
+				"""
+			}
+			return """
+			<div class="translationStatus">\(NSLocalizedString("Translated", comment: "Translation status"))</div>
+			<article>
+			\(titleHTML)
+			<div class="translatedArticleBody articleBody" data-translation-typewriter>\(translation.body)</div>
+			\(translationTypewriterScript)
+			</article>
+			"""
+		case .failed(let message):
+			return """
+			<div class="translationStatus">\(NSLocalizedString("Translation Failed", comment: "Translation status")): \(message.escapedHTML)</div>
+			\(articleHTML)
+			"""
+		}
+	}
+
+	var translationTypewriterScript: String {
+		"""
+		<script>
+		(function() {
+			const script = document.currentScript;
+			const root = script ? script.previousElementSibling : null;
+			if (!root || root.dataset.translationTypewriterStarted === "true") {
+				return;
+			}
+			if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+				root.dataset.translationTypewriterComplete = "true";
+				return;
+			}
+
+			root.dataset.translationTypewriterStarted = "true";
+			const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+			const textNodes = [];
+			let node;
+			while ((node = walker.nextNode())) {
+				if (!node.nodeValue || node.nodeValue.trim().length === 0) {
+					continue;
+				}
+				textNodes.push({ node: node, text: node.nodeValue });
+				node.nodeValue = "";
+			}
+
+			if (textNodes.length === 0) {
+				root.dataset.translationTypewriterComplete = "true";
+				return;
+			}
+
+			const cursor = document.createElement("span");
+			cursor.className = "translationTypewriterCursor";
+			cursor.textContent = "|";
+
+			let nodeIndex = 0;
+			let characterIndex = 0;
+			const charactersPerTick = 3;
+			const tickDelay = 14;
+
+			function finish() {
+				cursor.remove();
+				root.dataset.translationTypewriterComplete = "true";
+			}
+
+			function moveCursorAfter(node) {
+				const parent = node.parentNode;
+				if (!parent) {
+					return;
+				}
+				if (cursor.parentNode === parent && cursor.previousSibling === node) {
+					return;
+				}
+				parent.insertBefore(cursor, node.nextSibling);
+			}
+
+			function tick() {
+				let remaining = charactersPerTick;
+				while (remaining > 0 && nodeIndex < textNodes.length) {
+					const item = textNodes[nodeIndex];
+					moveCursorAfter(item.node);
+					const nextIndex = Math.min(characterIndex + remaining, item.text.length);
+					item.node.nodeValue += item.text.slice(characterIndex, nextIndex);
+					remaining -= nextIndex - characterIndex;
+					characterIndex = nextIndex;
+					if (characterIndex >= item.text.length) {
+						nodeIndex += 1;
+						characterIndex = 0;
+					}
+				}
+
+				if (nodeIndex >= textNodes.length) {
+					finish();
+				} else {
+					window.setTimeout(tick, tickDelay);
+				}
+			}
+
+			tick();
+		})();
+		</script>
+		"""
 	}
 
 	func fetchScrollInfo() async -> ScrollInfo? {
@@ -349,6 +516,99 @@ private extension DetailWebViewController {
 	@objc func webInspectorEnabledDidChange(_ notification: Notification) {
 		self.webInspectorEnabled = notification.object! as! Bool
 	}
+
+		// MARK: - Translation
+
+		/// Requests translation for the current article if needed.
+		/// Note: Translation can proceed even if the view isn't loaded yet,
+		/// as it only needs the article data, not the web view.
+		func requestTranslationIfNeeded() {
+			guard let coordinator = translationCoordinator else {
+				return
+			}
+
+			guard let article = article else {
+				translationStatus = .idle
+				return
+			}
+
+			// Determine body source and content
+			let bodySource: ArticleTranslation.BodySource
+			let bodyHTML: String
+
+			if case .extracted(_, let extractedArticle, _) = state {
+				bodySource = .extractedBody
+				bodyHTML = extractedArticle.content ?? ""
+			} else {
+				bodySource = .feedBody
+				bodyHTML = article.body ?? ""
+			}
+
+			// Request translation asynchronously
+			Task {
+				translationStatus = .translating
+
+				let result = await coordinator.translation(
+					for: article.articleID,
+					title: article.title ?? "",
+					bodyHTML: bodyHTML,
+					bodySource: bodySource
+				)
+
+				switch result {
+				case .translated(let translation):
+					translationStatus = .translated(translation)
+				case .failed(let error):
+					translationStatus = .failed(error.localizedDescription)
+				case .skipped:
+					translationStatus = .idle
+				}
+			}
+		}
+
+		/// Retries translation after a failure.
+		func retryTranslation() {
+			guard let coordinator = translationCoordinator else {
+				return
+			}
+
+			guard let article = article else {
+				return
+			}
+
+			// Determine body source and content
+			let bodySource: ArticleTranslation.BodySource
+			let bodyHTML: String
+
+			if case .extracted(_, let extractedArticle, _) = state {
+				bodySource = .extractedBody
+				bodyHTML = extractedArticle.content ?? ""
+			} else {
+				bodySource = .feedBody
+				bodyHTML = article.body ?? ""
+			}
+
+			// Retry translation asynchronously
+			Task {
+				translationStatus = .translating
+
+				let result = await coordinator.retry(
+					for: article.articleID,
+					title: article.title ?? "",
+					bodyHTML: bodyHTML,
+					bodySource: bodySource
+				)
+
+				switch result {
+				case .translated(let translation):
+					translationStatus = .translated(translation)
+				case .failed(let error):
+					translationStatus = .failed(error.localizedDescription)
+				case .skipped:
+					translationStatus = .idle
+				}
+			}
+		}
 }
 
 // MARK: - ScrollInfo

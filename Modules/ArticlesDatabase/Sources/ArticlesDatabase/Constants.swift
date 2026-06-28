@@ -13,6 +13,7 @@ import Foundation
 struct DatabaseTableName {
 	static let articles = "articles"
 	static let statuses = "statuses"
+	static let translations = "translations"
 }
 
 struct DatabaseKey {
@@ -49,4 +50,11 @@ struct DatabaseKey {
 	// Search
 	static let body = "body"
 	static let rowID = "rowid"
+
+	// Translation
+	static let targetLanguage = "targetLanguage"
+	static let bodySource = "bodySource"
+	static let engine = "engine"
+	static let translatedAt = "translatedAt"
+	static let translationBody = "translationBody"
 }

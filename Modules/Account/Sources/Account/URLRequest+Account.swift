@@ -61,6 +61,10 @@ public extension URLRequest {
 			// credentials-in-general, such as in this refresh token case,
 			// the authority to prove an identity.
 			assertionFailure("Refresh tokens are used to replace expired access tokens. Did you mean to use `accessToken` instead?")
+		case .openAICompatibleAPIKey:
+			// Translation-feature credential; not used to build URLRequests for
+			// feed accounts. TranslationSettings reads the secret directly.
+			assertionFailure("OpenAI-compatible API key is read by TranslationSettings, not used to build URLRequests.")
 		}
 
 		guard let conditionalGet = conditionalGet else {

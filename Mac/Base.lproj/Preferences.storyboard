@@ -527,6 +527,19 @@
             </objects>
             <point key="canvasLocation" x="-36" y="422"/>
         </scene>
+        <!--Translation-->
+        <scene sceneID="TR1-TR-Translation">
+            <objects>
+                <viewController title="Translation" storyboardIdentifier="Translation" id="TR2-VC-Translation" customClass="TranslationPreferencesViewController" customModule="NetNewsWire" customModuleProvider="target" sceneMemberID="viewController">
+                    <view key="view" id="TR3-VW-Translation">
+                        <rect key="frame" x="0.0" y="0.0" width="512" height="400"/>
+                        <autoresizingMask key="autoresizingMask"/>
+                    </view>
+                </viewController>
+                <customObject id="TR4-FR-Translation" userLabel="First Responder" customClass="NSResponder" sceneMemberID="firstResponder"/>
+            </objects>
+            <point key="canvasLocation" x="-36" y="737"/>
+        </scene>
         <!--Accounts Preferences View Controller-->
         <scene sceneID="Rsj-41-ZOj">
             <objects>

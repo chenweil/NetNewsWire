@@ -19,6 +19,7 @@ enum TimelineSourceMode {
 
 final class MainWindowController: NSWindowController, NSUserInterfaceValidations {
 	static private let logger = Logger(subsystem: Bundle.main.bundleIdentifier!, category: "MainWindowController")
+	private static let didInstallTranslateToolbarItemKey = "MainWindowToolbarDidInstallTranslateItem"
 
 	@IBOutlet var articleThemePopUpButton: NSPopUpButton?
 
@@ -75,6 +76,7 @@ final class MainWindowController: NSWindowController, NSUserInterfaceValidations
 		toolbar.displayMode = .iconOnly
 		toolbar.delegate = self
 		self.window?.toolbar = toolbar
+		installTranslateToolbarItemIfNeeded(toolbar)
 
 		if let window = window {
 			let point = NSPoint(x: 128, y: 64)
@@ -274,6 +276,10 @@ final class MainWindowController: NSWindowController, NSUserInterfaceValidations
 			return validateToggleArticleExtractor(item)
 		}
 
+		if item.action == #selector(translateArticle(_:)) {
+			return validateTranslateArticle(item)
+		}
+
 		if item.action == #selector(toolbarShowShareMenu(_:)) {
 			return canShowShareMenu()
 		}
@@ -462,6 +468,10 @@ final class MainWindowController: NSWindowController, NSUserInterfaceValidations
 			startArticleExtractorForCurrentLink()
 		}
 
+	}
+
+	@IBAction func translateArticle(_ sender: Any?) {
+		detailViewController?.translateCurrentArticle()
 	}
 
 	@IBAction func markAllAsReadAndGoToNextUnread(_ sender: Any?) {
@@ -795,6 +805,7 @@ extension NSToolbarItem.Identifier {
 	static let markRead = NSToolbarItem.Identifier("markRead")
 	static let markStar = NSToolbarItem.Identifier("markStar")
 	static let readerView = NSToolbarItem.Identifier("readerView")
+	static let translate = NSToolbarItem.Identifier("translate")
 	static let openInBrowser = NSToolbarItem.Identifier("openInBrowser")
 	static let share = NSToolbarItem.Identifier("share")
 	static let articleThemeMenu = NSToolbarItem.Identifier("articleThemeMenu")
@@ -854,6 +865,11 @@ extension MainWindowController: NSToolbarDelegate {
 			toolbarItem.view = button
 			return toolbarItem
 
+		case .translate:
+			let title = NSLocalizedString("Translate", comment: "Translate")
+			let image = NSImage(systemSymbolName: "character.bubble", accessibilityDescription: title) ?? Assets.Images.articleTheme
+			return buildToolbarButton(.translate, title, image, "translateArticle:")
+
 		case .share:
 			let title = NSLocalizedString("Share", comment: "Share button")
 			return buildToolbarButton(.share, title, Assets.Images.share, "toolbarShowShareMenu:")
@@ -901,6 +917,7 @@ extension MainWindowController: NSToolbarDelegate {
 			.markRead,
 			.markStar,
 			.readerView,
+			.translate,
 			.openInBrowser,
 			.share,
 			.articleThemeMenu,
@@ -923,6 +940,7 @@ extension MainWindowController: NSToolbarDelegate {
 			.markStar,
 			.nextUnread,
 			.readerView,
+			.translate,
 			.share,
 			.openInBrowser,
 			.flexibleSpace,
@@ -1195,6 +1213,20 @@ private extension MainWindowController {
 		return state != .processing
 	}
 
+	func validateTranslateArticle(_ item: NSValidatedUserInterfaceItem) -> Bool {
+		let commandName = NSLocalizedString("Translate", comment: "Translate")
+
+		if let toolbarItem = item as? NSToolbarItem {
+			toolbarItem.toolTip = commandName
+		}
+
+		if let menuItem = item as? NSMenuItem {
+			menuItem.title = commandName
+		}
+
+		return TranslationSettings.shared.isEnabled && oneSelectedArticle != nil
+	}
+
 	func canMarkAboveArticlesAsRead() -> Bool {
 		return currentTimelineViewController?.canMarkAboveArticlesAsRead() ?? false
 	}
@@ -1412,6 +1444,35 @@ private extension MainWindowController {
 		if !(sidebarSplitViewItem?.isCollapsed ?? false) && isSidebarHidden {
 			sidebarSplitViewItem?.isCollapsed = true
 		}
+	}
+
+	func installTranslateToolbarItemIfNeeded(_ toolbar: NSToolbar) {
+		let defaults = UserDefaults.standard
+		guard !defaults.bool(forKey: Self.didInstallTranslateToolbarItemKey) else {
+			return
+		}
+
+		defer {
+			defaults.set(true, forKey: Self.didInstallTranslateToolbarItemKey)
+		}
+
+		guard toolbar.existingItem(withIdentifier: .translate) == nil else {
+			return
+		}
+
+		let itemIdentifiers = toolbar.items.map(\.itemIdentifier)
+		let insertionIndex: Int
+		if let readerViewIndex = itemIdentifiers.firstIndex(of: .readerView) {
+			insertionIndex = readerViewIndex + 1
+		} else if let shareIndex = itemIdentifiers.firstIndex(of: .share) {
+			insertionIndex = shareIndex
+		} else if let openInBrowserIndex = itemIdentifiers.firstIndex(of: .openInBrowser) {
+			insertionIndex = openInBrowserIndex
+		} else {
+			insertionIndex = toolbar.items.count
+		}
+
+		toolbar.insertItem(withItemIdentifier: .translate, at: insertionIndex)
 	}
 
 	func buildToolbarButton(_ itemIdentifier: NSToolbarItem.Identifier, _ title: String, _ image: NSImage, _ selector: String) -> NSToolbarItem {
