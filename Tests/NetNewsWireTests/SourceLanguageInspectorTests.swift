@@ -64,6 +64,27 @@ import Testing
 		#expect(skip == true)
 	}
 
+	@Test func simplifiedChineseDetectionMatchesGenericChineseTarget() {
+		let inspector = SourceLanguageInspector(detect: { _ in "zh-Hans" })
+		let skip = inspector.sourceMatchesTarget(
+			title: "标题",
+			bodyHTML: "<p>一段中文。</p>",
+			targetLanguage: "zh"
+		)
+		#expect(skip == true)
+	}
+
+	@Test func chineseBodyWithEnglishTitleSkipsForChineseTarget() {
+		let inspector = SourceLanguageInspector(detect: { _ in "en" })
+		let body = String(repeating: "这是中文正文，包含 API token Swift OpenAI 这样的英文词，但整体仍然是中文。", count: 4)
+		let skip = inspector.sourceMatchesTarget(
+			title: "OpenAI Releases GPT-5",
+			bodyHTML: "<p>\(body)</p>",
+			targetLanguage: "zh-Hans"
+		)
+		#expect(skip == true)
+	}
+
 	@Test func nilDetectionDoesNotSkip() {
 		// NLTagger can return nil on very short or non-textual input — treat
 		// that as "we don't know, so don't skip and translate anyway".
@@ -76,7 +97,7 @@ import Testing
 		#expect(skip == false)
 	}
 
-	@Test func sampleTruncatesBodyToFiveHundredChars() {
+	@Test func sampleTruncatesVisibleBodyToSevenHundredChars() {
 		final class Box: @unchecked Sendable { var value = 0 }
 		let box = Box()
 		let longBody = String(repeating: "a", count: 5_000)
@@ -89,11 +110,11 @@ import Testing
 			bodyHTML: longBody,
 			targetLanguage: "en"
 		)
-		// Title (5) + space (1) + first 500 chars of body = 506
-		#expect(box.value == 506)
+		// First 700 chars of body + space + Title (5) = 706
+		#expect(box.value == 706)
 	}
 
-	@Test func sampleStartsWithTitleThenSpaceThenBody() {
+	@Test func sampleStartsWithBodyThenSpaceThenTitle() {
 		final class Box: @unchecked Sendable { var value: String? }
 		let box = Box()
 		let inspector = SourceLanguageInspector(detect: { text in
@@ -105,6 +126,21 @@ import Testing
 			bodyHTML: "World",
 			targetLanguage: "en"
 		)
-		#expect(box.value == "Hello World")
+		#expect(box.value == "World Hello")
+	}
+
+	@Test func sampleStripsHTMLBeforeDetection() {
+		final class Box: @unchecked Sendable { var value: String? }
+		let box = Box()
+		let inspector = SourceLanguageInspector(detect: { text in
+			box.value = text
+			return "en"
+		})
+		_ = inspector.sourceMatchesTarget(
+			title: "Title",
+			bodyHTML: "<p>Hello &amp; goodbye.</p>",
+			targetLanguage: "en"
+		)
+		#expect(box.value == "Hello & goodbye. Title")
 	}
 }
