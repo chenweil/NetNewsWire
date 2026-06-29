@@ -173,6 +173,10 @@ import ActivityLog
 			if let existingiCloudAccount = iCloudAccount {
 				return existingiCloudAccount
 			}
+			guard Platform.appHasCloudKitEntitlement else {
+				Self.logger.error("Unable to create iCloud account because the app is missing the CloudKit entitlement.")
+				return defaultAccount
+			}
 		}
 
 		let accountID = type == .cloudKit ? "iCloud" : UUID().uuidString
@@ -595,7 +599,11 @@ private extension AccountManager {
 	}
 
 	func loadAccount(_ accountSpecifier: AccountSpecifier) -> Account? {
-		Account(dataFolder: accountSpecifier.folderPath, type: accountSpecifier.type, accountID: accountSpecifier.identifier)
+		guard accountSpecifier.type != .cloudKit || Platform.appHasCloudKitEntitlement else {
+			Self.logger.warning("Skipping iCloud account because the app is missing the CloudKit entitlement.")
+			return nil
+		}
+		return Account(dataFolder: accountSpecifier.folderPath, type: accountSpecifier.type, accountID: accountSpecifier.identifier)
 	}
 
 	func loadAccount(_ filename: String) -> Account? {

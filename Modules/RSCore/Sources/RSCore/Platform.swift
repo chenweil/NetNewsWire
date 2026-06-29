@@ -8,6 +8,7 @@
 
 import Foundation
 import os
+import Security
 
 public struct Platform {
 
@@ -15,6 +16,10 @@ public struct Platform {
 
 	nonisolated public static var deviceHasiCloudAccount: Bool {
 		FileManager.default.ubiquityIdentityToken != nil
+	}
+
+	nonisolated public static var appHasCloudKitEntitlement: Bool {
+		_appHasCloudKitEntitlement
 	}
 
 	/// Returns true if the app is currently running unit tests.
@@ -53,6 +58,23 @@ public struct Platform {
 		}
 
 		Self.logger.info("Not running unit tests")
+		return false
+	}()
+
+	nonisolated private static let _appHasCloudKitEntitlement: Bool = {
+		guard let task = SecTaskCreateFromSelf(nil),
+			  let value = SecTaskCopyValueForEntitlement(task, "com.apple.developer.icloud-services" as CFString, nil) else {
+			return false
+		}
+
+		if let services = value as? [String] {
+			return services.contains("CloudKit")
+		}
+
+		if let service = value as? String {
+			return service == "CloudKit"
+		}
+
 		return false
 	}()
 

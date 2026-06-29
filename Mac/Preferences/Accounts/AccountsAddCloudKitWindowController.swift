@@ -42,6 +42,11 @@ final class AccountsAddCloudKitWindowController: NSWindowController {
 	@IBAction func create(_ sender: Any) {
 		assert(!AccountManager.shared.hasiCloudAccount)
 
+		guard AddCloudKitAccountUtilities.isCloudKitAvailable else {
+			presentError(AddCloudKitAccountError.cloudKitUnavailable)
+			return
+		}
+
 		guard AddCloudKitAccountUtilities.isiCloudDriveEnabled else {
 			presentError(AddCloudKitAccountError.iCloudDriveMissing)
 			return
