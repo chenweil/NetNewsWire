@@ -85,6 +85,8 @@ public enum SkipReason: Sendable, Equatable {
 public enum TranslationError: LocalizedError, Sendable, Equatable {
 	/// Network is unreachable. Retrying may succeed.
 	case networkUnavailable
+	/// The translation provider did not return a response before the client timeout.
+	case requestTimedOut
 	/// User selected the OpenAI-compatible engine but no API key is stored.
 	/// Distinct from `failed` so the UI can prompt for credentials.
 	case credentialsMissing
@@ -102,6 +104,8 @@ public enum TranslationError: LocalizedError, Sendable, Equatable {
 		switch self {
 		case .networkUnavailable:
 			return NSLocalizedString("Network unavailable.", comment: "Translation error")
+		case .requestTimedOut:
+			return NSLocalizedString("Translation request timed out.", comment: "Translation error")
 		case .credentialsMissing:
 			return NSLocalizedString("Translation credentials are missing.", comment: "Translation error")
 		case .rateLimited:
@@ -125,4 +129,7 @@ public enum TranslationStatus: Sendable, Equatable {
 	case translating
 	case translated(ArticleTranslation)
 	case failed(String)
+	/// Streaming produced visible content before the request failed. The
+	/// partial body is intentionally kept out of the translation cache.
+	case streamingFailed(String, partialBody: String)
 }

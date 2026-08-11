@@ -48,6 +48,18 @@ import ArticlesDatabase
         )
     }
 
+    private actor DeltaRecorder {
+        private var deltas: [String] = []
+
+        func append(_ delta: String) {
+            deltas.append(delta)
+        }
+
+        func values() -> [String] {
+            deltas
+        }
+    }
+
     // MARK: - Test 1: disabled returns skipped
 
     @Test func disabledReturnsSkipped() async {
@@ -260,6 +272,98 @@ import ArticlesDatabase
             return
         }
         #expect(t.engine == ArticleTranslation.Engine.apple)
+    }
+
+    @Test func streamingLLMReportsDeltasAndCachesCompleteTranslation() async {
+        let deltaRecorder = DeltaRecorder()
+        let expected = Self.makeTranslation(
+            articleID: "a1",
+            targetLanguage: "zh-Hans",
+            bodySource: .feedBody,
+            title: "标题",
+            body: "第一段",
+            engine: .openAICompatible
+        )
+
+        let deps = TranslationCoordinator.Dependencies(
+            isEnabled: { true },
+            engineChoice: { .openAICompatible },
+            targetLanguage: { "zh-Hans" },
+            skipWhenSourceMatchesTarget: { false },
+            checkSourceMatchesTarget: { _, _, _ in false },
+            fetchCache: { _, _, _ in nil },
+            upsertCache: { translation in
+                #expect(translation == expected)
+            },
+            deleteCache: { _, _, _ in },
+            hasOpenAIKey: { true },
+            openAIConfig: { nil },
+            translateWithApple: { _ in Self.placeholder() },
+            translateWithOpenAI: { _ in
+                Issue.record("Complete non-streaming path should not be used")
+                return Self.placeholder()
+            },
+            streamWithOpenAI: { _, onBodyDelta in
+                await onBodyDelta("第一")
+                await onBodyDelta("段")
+                return expected
+            }
+        )
+
+        let coordinator = TranslationCoordinator(deps: deps)
+        let result = await coordinator.streamingTranslation(
+            for: "a1",
+            title: "Title",
+            bodyHTML: String(repeating: "x", count: 2000),
+            bodySource: .feedBody,
+            onBodyDelta: { delta in
+                await deltaRecorder.append(delta)
+            }
+        )
+
+        #expect(result == .translated(expected))
+        let deltas = await deltaRecorder.values()
+        #expect(deltas == ["第一", "段"])
+    }
+
+    @Test func streamingFailureBeforeFirstDeltaFallsBackToCompleteTranslation() async {
+        let expected = Self.makeTranslation(
+            articleID: "a1",
+            targetLanguage: "zh-Hans",
+            bodySource: .feedBody,
+            title: "标题",
+            body: "完整正文",
+            engine: .openAICompatible
+        )
+
+        let deps = TranslationCoordinator.Dependencies(
+            isEnabled: { true },
+            engineChoice: { .openAICompatible },
+            targetLanguage: { "zh-Hans" },
+            skipWhenSourceMatchesTarget: { false },
+            checkSourceMatchesTarget: { _, _, _ in false },
+            fetchCache: { _, _, _ in nil },
+            upsertCache: { _ in },
+            deleteCache: { _, _, _ in },
+            hasOpenAIKey: { true },
+            openAIConfig: { nil },
+            translateWithApple: { _ in Self.placeholder() },
+            translateWithOpenAI: { _ in expected },
+            streamWithOpenAI: { _, _ in
+                throw TranslationError.invalidResponse
+            }
+        )
+
+        let coordinator = TranslationCoordinator(deps: deps)
+        let result = await coordinator.streamingTranslation(
+            for: "a1",
+            title: "Title",
+            bodyHTML: String(repeating: "x", count: 2000),
+            bodySource: .feedBody,
+            onBodyDelta: { _ in }
+        )
+
+        #expect(result == .translated(expected))
     }
 
     // MARK: - Test 6: source-language matches target returns skipped without cache write

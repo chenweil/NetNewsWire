@@ -28,6 +28,10 @@ _Avoid_: Cloud translation; GPT translation; LLM translator.
 : The rule that routes translations whose source text exceeds the `longTextThreshold` (≥ 1500 characters) to the OpenAI-Compatible engine (when configured) instead of Apple Translation. When no LLM credentials are configured, Apple Translation handles the text regardless of length.
 _Avoid_: LLM fallback; Engine switch.
 
+**Streaming Translation**
+: Progressive display of an OpenAI-Compatible Engine body translation as chunks arrive, before the complete translation is ready. The original article remains readable while the streamed translation is incomplete.
+_Avoid_: Streaming response; Token stream; Live rendering.
+
 **Translation Cache**
 : Persisted translations stored as a `translations` table inside the Articles database. Primary key is `(articleID, targetLanguage, bodySource)`. Survives app restart. Switching target language does not invalidate other languages' entries — it simply misses the cache.
 _Avoid_: Translation history; Translation store.

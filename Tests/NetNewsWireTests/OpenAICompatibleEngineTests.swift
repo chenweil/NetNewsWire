@@ -38,6 +38,18 @@ import Testing
 		}
 	}
 
+	private actor DeltaRecorder {
+		private var deltas: [String] = []
+
+		func append(_ delta: String) {
+			deltas.append(delta)
+		}
+
+		func values() -> [String] {
+			deltas
+		}
+	}
+
 	// MARK: - Basic translation
 
 	@Test func translatesTitleAndBodyAsSeparateRequests() async throws {
@@ -74,7 +86,6 @@ import Testing
 			bodySource: .feedBody
 		))
 
-		// First call is the title request.
 		let titleCall = recorder.calls[0]
 		#expect(titleCall.messages.count == 2)
 		#expect(titleCall.messages[0].role == .system)
@@ -94,10 +105,75 @@ import Testing
 			bodySource: .feedBody
 		))
 
-		// Second call is the body request — body sent as opaque plain text,
-		// HTML tags included (issue spec: "treats body as opaque plain text").
+		// Body is sent as opaque plain text, HTML tags included
+		// (issue spec: "treats body as opaque plain text").
 		let bodyCall = recorder.calls[1]
 		#expect(bodyCall.messages[1].content == "<p>HTML body with <strong>tags</strong>.</p>")
+	}
+
+	@Test func streamingLineExtractsAssistantDelta() {
+		let line = #"data: {"choices":[{"delta":{"content":"你好"}}]}"#
+		#expect(OpenAICompatibleEngine.extractStreamingDelta(from: line) == "你好")
+		#expect(OpenAICompatibleEngine.extractStreamingDelta(from: "data: [DONE]") == nil)
+		#expect(OpenAICompatibleEngine.extractStreamingDelta(from: "event: message") == nil)
+	}
+
+	@Test func streamingTranslationAssemblesBodyAndReportsDeltas() async throws {
+		let deltaRecorder = DeltaRecorder()
+		let engine = OpenAICompatibleEngine(
+			config: Self.testConfig,
+			sendChat: { _, _ in "Translated Title" },
+			streamChat: { _, _ in
+				AsyncThrowingStream { continuation in
+					continuation.yield("第一")
+					continuation.yield("段")
+					continuation.finish()
+				}
+			}
+		)
+
+		let result = try await engine.translateStreaming(
+			TranslationRequest(
+				articleID: "a",
+				title: "Title",
+				bodyHTML: "<p>Body</p>",
+				targetLanguage: "zh-Hans",
+				bodySource: .feedBody
+			),
+			onBodyDelta: { delta in
+				await deltaRecorder.append(delta)
+			}
+		)
+
+		#expect(result.title == "Translated Title")
+		#expect(result.body == "第一段")
+		let deltas = await deltaRecorder.values()
+		#expect(deltas == ["第一", "段"])
+	}
+
+	@Test func streamingTimeoutMapsToRequestTimedOut() async throws {
+		let engine = OpenAICompatibleEngine(
+			config: Self.testConfig,
+			sendChat: { _, _ in "Translated Title" },
+			streamChat: { _, _ in
+				AsyncThrowingStream { continuation in
+					continuation.finish(throwing: OpenAICompatibleEngine.HTTPError.network(.timedOut))
+				}
+			}
+		)
+
+		await #expect(throws: TranslationError.requestTimedOut) {
+			try await engine.translateStreaming(
+				TranslationRequest(
+					articleID: "a",
+					title: "Title",
+					bodyHTML: "Body",
+					targetLanguage: "zh-Hans",
+					bodySource: .feedBody
+				),
+				onBodyDelta: { _ in }
+			)
+		}
 	}
 
 	@Test func systemPromptContainsTargetLanguage() async throws {
@@ -161,6 +237,23 @@ import Testing
 		let engine = OpenAICompatibleEngine(config: Self.testConfig, sendChat: send)
 
 		await #expect(throws: TranslationError.invalidResponse) {
+			try await engine.translate(TranslationRequest(
+				articleID: "a",
+				title: "T",
+				bodyHTML: "B",
+				targetLanguage: "zh-Hans",
+				bodySource: .feedBody
+			))
+		}
+	}
+
+	@Test func timedOutNetworkErrorMapsToRequestTimedOut() async throws {
+		let send: @Sendable (OpenAICompatibleEngine.Config, [OpenAICompatibleEngine.Message]) async throws -> String = { _, _ in
+			throw OpenAICompatibleEngine.HTTPError.network(.timedOut)
+		}
+		let engine = OpenAICompatibleEngine(config: Self.testConfig, sendChat: send)
+
+		await #expect(throws: TranslationError.requestTimedOut) {
 			try await engine.translate(TranslationRequest(
 				articleID: "a",
 				title: "T",

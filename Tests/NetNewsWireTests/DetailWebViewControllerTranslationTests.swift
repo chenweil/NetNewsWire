@@ -118,6 +118,8 @@ struct DetailWebViewControllerTranslationTests {
             #expect(translation.engine == expectedTranslation.engine)
         case .failed(let error):
             Issue.record("Translation should succeed, but got error: \(error)")
+        case .streamingFailed(let error, _):
+            Issue.record("Translation should succeed, but got streaming error: \(error)")
         case .idle, .translating:
             Issue.record("Translation should complete, but status is: \(status)")
         }
@@ -158,7 +160,7 @@ struct DetailWebViewControllerTranslationTests {
             #expect(translation.translatedAt == cachedTranslation.translatedAt)
         case .translating:
             Issue.record("Cache hit should not go through .translating state")
-        case .idle, .failed:
+        case .idle, .failed, .streamingFailed:
             Issue.record("Cache hit should result in .translated state, got: \(status)")
         }
     }
@@ -242,7 +244,7 @@ struct DetailWebViewControllerTranslationTests {
         switch status {
         case .failed(let errorMessage):
             #expect(errorMessage.contains("network") || errorMessage.contains("unavailable"))
-        case .idle, .translating, .translated:
+        case .idle, .translating, .translated, .streamingFailed:
             Issue.record("Expected .failed status, got: \(status)")
         }
     }
@@ -293,6 +295,48 @@ struct DetailWebViewControllerTranslationTests {
         #expect(didKeepContentAndStructure)
     }
 
+    @Test("Translating status animates dots")
+    func translatingStatusAnimatesDots() async throws {
+        let controller = DetailWebViewController()
+        controller.loadViewIfNeeded()
+        controller.state = .article(makeTestArticle(), nil)
+        controller.translationStatus = .translating
+
+        let didAnimate = try await waitForJavaScriptBool(
+            """
+            (() => {
+                const dots = document.querySelector("[data-translation-loading-dots]");
+                return dots !== null && dots.textContent !== "...";
+            })()
+            """,
+            in: controller,
+            timeout: .seconds(2)
+        )
+        #expect(didAnimate)
+    }
+
+    @Test("Translating status renders streamed text safely")
+    func translatingStatusRendersStreamedTextSafely() async throws {
+        let controller = DetailWebViewController()
+        controller.loadViewIfNeeded()
+        controller.state = .article(makeTestArticle(), nil)
+        controller.translationStatus = .translating
+
+        let didRenderSafely = try await waitForJavaScriptBool(
+            """
+            (() => {
+                const didAppend = window.appendTranslationStreamDelta("<b>partial</b>");
+                const element = document.querySelector("[data-translation-stream]");
+                return didAppend
+                    && element?.textContent === "<b>partial</b>"
+                    && element?.querySelector("b") === null;
+            })()
+            """,
+            in: controller
+        )
+        #expect(didRenderSafely)
+    }
+
     private func waitForJavaScriptBool(
         _ javascript: String,
         in controller: DetailWebViewController,
@@ -319,7 +363,7 @@ struct DetailWebViewControllerTranslationTests {
             switch controller.translationStatus {
             case .idle, .translating:
                 try await Task.sleep(for: .milliseconds(20))
-            case .translated, .failed:
+            case .translated, .failed, .streamingFailed:
                 return controller.translationStatus
             }
         }

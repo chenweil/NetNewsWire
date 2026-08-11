@@ -33,6 +33,9 @@ final class DetailWebViewController: NSViewController {
 	/// Current translation status. Observable by UI.
 	var translationStatus: TranslationStatus = .idle {
 		didSet {
+			if case .translating = translationStatus {
+				streamedTranslationBody = ""
+			}
 			guard isViewLoaded else { return }
 			reloadHTMLMaintainingScrollPosition()
 		}
@@ -49,6 +52,10 @@ final class DetailWebViewController: NSViewController {
 
 	required init?(coder: NSCoder) {
 		fatalError("init(coder:) has not been implemented")
+	}
+
+	deinit {
+		translationTask?.cancel()
 	}
 
 	var state: DetailState = .noSelection {
@@ -101,6 +108,8 @@ final class DetailWebViewController: NSViewController {
 	private var isReloadingHTML = false
 	private let keyboardDelegate = DetailKeyboardDelegate()
 	private var windowScrollY: CGFloat?
+	private var translationTask: Task<Void, Never>?
+	private var streamedTranslationBody = ""
 
 	private var isShowingExtractedArticle: Bool {
 		switch state {
@@ -196,9 +205,10 @@ final class DetailWebViewController: NSViewController {
 
 		translationCoordinator = TranslationCoordinator.live(articlesDatabase: account.articlesDatabase)
 
-		if case .failed = translationStatus {
+		switch translationStatus {
+		case .failed, .streamingFailed:
 			retryTranslation()
-		} else {
+		default:
 			requestTranslationIfNeeded()
 		}
 	}
@@ -281,6 +291,7 @@ extension DetailWebViewController: WKNavigationDelegate, WKUIDelegate {
 	}
 
 	public func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+		renderPendingTranslationStream()
 		guard let windowScrollY else {
 			return
 		}
@@ -375,7 +386,10 @@ private extension DetailWebViewController {
 			return articleHTML
 		case .translating:
 			return """
-			<div class="translationStatus">\(NSLocalizedString("Translating...", comment: "Translation status"))</div>
+			<div class="translationStatus"><span>\(NSLocalizedString("Translating", comment: "Translation status"))</span><span data-translation-loading-dots>...</span></div>
+			\(translationStreamHTML(body: streamedTranslationBody))
+			\(translationLoadingScript)
+			\(translationStreamingScript)
 			\(articleHTML)
 			"""
 		case .translated(let translation):
@@ -400,7 +414,72 @@ private extension DetailWebViewController {
 			<div class="translationStatus">\(NSLocalizedString("Translation Failed", comment: "Translation status")): \(message.escapedHTML)</div>
 			\(articleHTML)
 			"""
+		case .streamingFailed(let message, let partialBody):
+			return """
+			<div class="translationStatus">\(NSLocalizedString("Translation Failed", comment: "Translation status")): \(message.escapedHTML)</div>
+			\(translationStreamHTML(body: partialBody))
+			\(articleHTML)
+			"""
 		}
+	}
+
+	func translationStreamHTML(body: String) -> String {
+		"""
+		<div class="translatedArticleBody articleBody" data-translation-stream style="white-space: pre-wrap;">\(body.escapedHTML)</div>
+		"""
+	}
+
+	var translationLoadingScript: String {
+		"""
+		<script>
+		(function() {
+			const dots = document.querySelector("[data-translation-loading-dots]");
+			if (!dots || dots.dataset.translationLoadingStarted === "true") {
+				return;
+			}
+			if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+				return;
+			}
+
+			dots.dataset.translationLoadingStarted = "true";
+			let count = 3;
+			setInterval(function() {
+				count = (count + 1) % 4;
+				dots.textContent = ".".repeat(count);
+			}, 500);
+		})();
+		</script>
+		"""
+	}
+
+	var translationStreamingScript: String {
+		"""
+		<script>
+		(function() {
+			function root() {
+				return document.querySelector("[data-translation-stream]");
+			}
+
+			window.setTranslationStreamText = function(text) {
+				const element = root();
+				if (!element) {
+					return false;
+				}
+				element.textContent = String(text);
+				return true;
+			};
+
+			window.appendTranslationStreamDelta = function(delta) {
+				const element = root();
+				if (!element) {
+					return false;
+				}
+				element.appendChild(document.createTextNode(String(delta)));
+				return true;
+			};
+		})();
+		</script>
+		"""
 	}
 
 	var translationTypewriterScript: String {
@@ -517,12 +596,56 @@ private extension DetailWebViewController {
 		self.webInspectorEnabled = notification.object! as! Bool
 	}
 
+	func cancelTranslationTask() {
+		translationTask?.cancel()
+		translationTask = nil
+	}
+
+	func receiveTranslationDelta(_ delta: String) {
+		guard !delta.isEmpty else { return }
+		streamedTranslationBody.append(delta)
+
+		guard
+			let javascriptLiteral = javascriptStringLiteral(delta),
+			let webView
+		else {
+			return
+		}
+
+		webView.evaluateJavaScript("window.appendTranslationStreamDelta(\(javascriptLiteral));") { [weak self] result, _ in
+			guard (result as? Bool) != true else { return }
+			self?.renderPendingTranslationStream()
+		}
+	}
+
+	func renderPendingTranslationStream() {
+		guard case .translating = translationStatus, !streamedTranslationBody.isEmpty else {
+			return
+		}
+		guard let javascriptLiteral = javascriptStringLiteral(streamedTranslationBody) else {
+			return
+		}
+		webView?.evaluateJavaScript("window.setTranslationStreamText(\(javascriptLiteral));", completionHandler: nil)
+	}
+
+	func javascriptStringLiteral(_ value: String) -> String? {
+		guard
+			let data = try? JSONSerialization.data(withJSONObject: [value]),
+			let encoded = String(data: data, encoding: .utf8)
+		else {
+			return nil
+		}
+		return String(encoded.dropFirst().dropLast())
+	}
+
 		// MARK: - Translation
 
 		/// Requests translation for the current article if needed.
 		/// Note: Translation can proceed even if the view isn't loaded yet,
 		/// as it only needs the article data, not the web view.
 		func requestTranslationIfNeeded() {
+			cancelTranslationTask()
+
 			guard let coordinator = translationCoordinator else {
 				return
 			}
@@ -532,7 +655,7 @@ private extension DetailWebViewController {
 				return
 			}
 
-			// Determine body source and content
+			// Determine body source and content.
 			let bodySource: ArticleTranslation.BodySource
 			let bodyHTML: String
 
@@ -544,30 +667,46 @@ private extension DetailWebViewController {
 				bodyHTML = article.body ?? ""
 			}
 
-			// Request translation asynchronously
-			Task {
-				translationStatus = .translating
-
-				let result = await coordinator.translation(
-					for: article.articleID,
-					title: article.title ?? "",
+			translationStatus = .translating
+			let articleID = article.articleID
+			let title = article.title ?? ""
+			translationTask = Task { [weak self] in
+				let result = await coordinator.streamingTranslation(
+					for: articleID,
+					title: title,
 					bodyHTML: bodyHTML,
-					bodySource: bodySource
+					bodySource: bodySource,
+					onBodyDelta: { @MainActor [weak self] delta in
+						self?.receiveTranslationDelta(delta)
+					}
 				)
+
+				guard let self, !Task.isCancelled, self.article?.articleID == articleID else {
+					return
+				}
 
 				switch result {
 				case .translated(let translation):
-					translationStatus = .translated(translation)
+					self.translationStatus = .translated(translation)
 				case .failed(let error):
-					translationStatus = .failed(error.localizedDescription)
+					if self.streamedTranslationBody.isEmpty {
+						self.translationStatus = .failed(error.localizedDescription)
+					} else {
+						self.translationStatus = .streamingFailed(
+							error.localizedDescription,
+							partialBody: self.streamedTranslationBody
+						)
+					}
 				case .skipped:
-					translationStatus = .idle
+					self.translationStatus = .idle
 				}
 			}
 		}
 
 		/// Retries translation after a failure.
 		func retryTranslation() {
+			cancelTranslationTask()
+
 			guard let coordinator = translationCoordinator else {
 				return
 			}
@@ -576,7 +715,7 @@ private extension DetailWebViewController {
 				return
 			}
 
-			// Determine body source and content
+			// Determine body source and content.
 			let bodySource: ArticleTranslation.BodySource
 			let bodyHTML: String
 
@@ -588,24 +727,38 @@ private extension DetailWebViewController {
 				bodyHTML = article.body ?? ""
 			}
 
-			// Retry translation asynchronously
-			Task {
-				translationStatus = .translating
-
-				let result = await coordinator.retry(
-					for: article.articleID,
-					title: article.title ?? "",
+			translationStatus = .translating
+			let articleID = article.articleID
+			let title = article.title ?? ""
+			translationTask = Task { [weak self] in
+				let result = await coordinator.streamingRetry(
+					for: articleID,
+					title: title,
 					bodyHTML: bodyHTML,
-					bodySource: bodySource
+					bodySource: bodySource,
+					onBodyDelta: { @MainActor [weak self] delta in
+						self?.receiveTranslationDelta(delta)
+					}
 				)
+
+				guard let self, !Task.isCancelled, self.article?.articleID == articleID else {
+					return
+				}
 
 				switch result {
 				case .translated(let translation):
-					translationStatus = .translated(translation)
+					self.translationStatus = .translated(translation)
 				case .failed(let error):
-					translationStatus = .failed(error.localizedDescription)
+					if self.streamedTranslationBody.isEmpty {
+						self.translationStatus = .failed(error.localizedDescription)
+					} else {
+						self.translationStatus = .streamingFailed(
+							error.localizedDescription,
+							partialBody: self.streamedTranslationBody
+						)
+					}
 				case .skipped:
-					translationStatus = .idle
+					self.translationStatus = .idle
 				}
 			}
 		}

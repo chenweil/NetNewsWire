@@ -28,6 +28,18 @@ private struct UnsafeSendableUserDefaults: @unchecked Sendable {
 	init(_ value: UserDefaults) { self.value = value }
 }
 
+private actor StreamingProgress {
+	private var receivedChunk = false
+
+	func markChunkReceived() {
+		receivedChunk = true
+	}
+
+	func hasReceivedChunk() -> Bool {
+		receivedChunk
+	}
+}
+
 // MARK: - TranslationCoordinator
 
 public final class TranslationCoordinator: Sendable {
@@ -59,6 +71,8 @@ public final class TranslationCoordinator: Sendable {
 		public var translateWithApple: @Sendable (_ request: TranslationRequest) async throws -> ArticleTranslation
 		/// Translate using the OpenAI-compatible engine. Throws `TranslationError` on failure.
 		public var translateWithOpenAI: @Sendable (_ request: TranslationRequest) async throws -> ArticleTranslation
+		/// Stream the OpenAI-compatible body and report each assistant content delta.
+		public var streamWithOpenAI: @Sendable (_ request: TranslationRequest, _ onBodyDelta: @escaping @Sendable (String) async -> Void) async throws -> ArticleTranslation
 
 		public init(
 			isEnabled: @escaping @Sendable () -> Bool,
@@ -72,7 +86,10 @@ public final class TranslationCoordinator: Sendable {
 			hasOpenAIKey: @escaping @Sendable () -> Bool,
 			openAIConfig: @escaping @Sendable () -> OpenAICompatibleEngine.Config?,
 			translateWithApple: @escaping @Sendable (_ request: TranslationRequest) async throws -> ArticleTranslation,
-			translateWithOpenAI: @escaping @Sendable (_ request: TranslationRequest) async throws -> ArticleTranslation
+			translateWithOpenAI: @escaping @Sendable (_ request: TranslationRequest) async throws -> ArticleTranslation,
+			streamWithOpenAI: @escaping @Sendable (_ request: TranslationRequest, _ onBodyDelta: @escaping @Sendable (String) async -> Void) async throws -> ArticleTranslation = { _, _ in
+				throw TranslationError.invalidResponse
+			}
 		) {
 			self.isEnabled = isEnabled
 			self.engineChoice = engineChoice
@@ -86,6 +103,7 @@ public final class TranslationCoordinator: Sendable {
 			self.openAIConfig = openAIConfig
 			self.translateWithApple = translateWithApple
 			self.translateWithOpenAI = translateWithOpenAI
+			self.streamWithOpenAI = streamWithOpenAI
 		}
 	}
 
@@ -163,6 +181,101 @@ public final class TranslationCoordinator: Sendable {
 		await deps.upsertCache(translation)
 
 		return .translated(translation)
+	}
+
+	/// Translates using the same admission rules as `translation(for:...)`,
+	/// but progressively exposes OpenAI-compatible body deltas. A stream that
+	/// fails before producing body content falls back to the existing complete
+	/// request; partial streamed output is never cached.
+	public func streamingTranslation(
+		for articleID: String,
+		title: String,
+		bodyHTML: String,
+		bodySource: ArticleTranslation.BodySource,
+		onBodyDelta: @escaping @Sendable (String) async -> Void
+	) async -> TranslationResult {
+		guard deps.isEnabled() else {
+			return .skipped(.disabled)
+		}
+
+		let targetLanguage = deps.targetLanguage()
+		if let cached = await deps.fetchCache(articleID, targetLanguage, bodySource) {
+			return .translated(cached)
+		}
+
+		if deps.skipWhenSourceMatchesTarget() && deps.checkSourceMatchesTarget(title, bodyHTML, targetLanguage) {
+			return .skipped(.sourceMatchesTarget)
+		}
+
+		let strippedBodyLength = AppleTranslationEngine.stripHTML(bodyHTML).count
+		let useLLM = deps.engineChoice() == .openAICompatible || (strippedBodyLength >= Self.longTextThreshold && deps.hasOpenAIKey())
+		guard useLLM else {
+			return await translation(for: articleID, title: title, bodyHTML: bodyHTML, bodySource: bodySource)
+		}
+
+		let request = TranslationRequest(
+			articleID: articleID,
+			title: title,
+			bodyHTML: bodyHTML,
+			targetLanguage: targetLanguage,
+			bodySource: bodySource
+		)
+		let progress = StreamingProgress()
+
+		do {
+			let completeTranslation = try await deps.streamWithOpenAI(request) { delta in
+				await progress.markChunkReceived()
+				await onBodyDelta(delta)
+			}
+			guard !Task.isCancelled else {
+				return .skipped(.disabled)
+			}
+
+			let receivedChunk = await progress.hasReceivedChunk()
+			if !bodyHTML.isEmpty && !receivedChunk {
+				return await translation(for: articleID, title: title, bodyHTML: bodyHTML, bodySource: bodySource)
+			}
+
+			await deps.upsertCache(completeTranslation)
+			return .translated(completeTranslation)
+		} catch is CancellationError {
+			return .skipped(.disabled)
+		} catch let error as TranslationError {
+			guard !Task.isCancelled else {
+				return .skipped(.disabled)
+			}
+			if await progress.hasReceivedChunk() {
+				return .failed(error)
+			}
+			return await translation(for: articleID, title: title, bodyHTML: bodyHTML, bodySource: bodySource)
+		} catch {
+			guard !Task.isCancelled else {
+				return .skipped(.disabled)
+			}
+			if await progress.hasReceivedChunk() {
+				return .failed(.translationFailed(error.localizedDescription))
+			}
+			return await translation(for: articleID, title: title, bodyHTML: bodyHTML, bodySource: bodySource)
+		}
+	}
+
+	/// Clears the cache entry, then runs the streaming translation path.
+	public func streamingRetry(
+		for articleID: String,
+		title: String,
+		bodyHTML: String,
+		bodySource: ArticleTranslation.BodySource,
+		onBodyDelta: @escaping @Sendable (String) async -> Void
+	) async -> TranslationResult {
+		let targetLanguage = deps.targetLanguage()
+		await deps.deleteCache(articleID, targetLanguage, bodySource)
+		return await streamingTranslation(
+			for: articleID,
+			title: title,
+			bodyHTML: bodyHTML,
+			bodySource: bodySource,
+			onBodyDelta: onBodyDelta
+		)
 	}
 
 	/// Clears the cache entry for this article/target/body combination and
@@ -271,6 +384,23 @@ extension TranslationCoordinator {
 					model: settings.openAIModel
 				)
 				return try await OpenAICompatibleEngine.live(config: config).translate(request)
+			},
+			streamWithOpenAI: { request, onBodyDelta in
+				let settings = TranslationSettings(defaults: d)
+				let apiKey = (try? CredentialsManager.retrieveCredentials(
+					type: .openAICompatibleAPIKey,
+					server: Self.translationServer,
+					username: Self.translationUsername
+				))?.secret ?? ""
+				let config = OpenAICompatibleEngine.Config(
+					baseURL: settings.openAIBaseURL,
+					apiKey: apiKey,
+					model: settings.openAIModel
+				)
+				return try await OpenAICompatibleEngine.live(config: config).translateStreaming(
+					request,
+					onBodyDelta: onBodyDelta
+				)
 			}
 		))
 	}
