@@ -91,4 +91,5 @@ fastlane/test_output
 /Modules/Secrets/Sources/Secrets/SecretKey.swift
 
 .claude/
-
+.agents/
+CLAUDE.md
