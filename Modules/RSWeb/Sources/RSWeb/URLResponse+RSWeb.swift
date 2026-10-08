@@ -9,6 +9,9 @@
 import Foundation
 
 nonisolated public extension URLResponse {
+	var requiresBrowserVerification: Bool {
+		(self as? HTTPURLResponse)?.value(forHTTPHeaderField: "cf-mitigated")?.lowercased() == "challenge"
+	}
 
 	var statusIsOK: Bool {
 		return forcedStatusCode >= 200 && forcedStatusCode <= 299
@@ -22,6 +25,12 @@ nonisolated public extension URLResponse {
 			return response.statusCode
 		}
 		return 0
+	}
+
+	/// The status code, or `nil` when no HTTP response was received at all.
+	var statusCodeIfReceived: Int? {
+		guard let response = self as? HTTPURLResponse else { return nil }
+		return response.statusCode
 	}
 }
 

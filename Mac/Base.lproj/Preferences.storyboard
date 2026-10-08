@@ -540,6 +540,19 @@
             </objects>
             <point key="canvasLocation" x="-36" y="737"/>
         </scene>
+        <!--RSSHub-->
+        <scene sceneID="RH1-SC-RSSHub">
+            <objects>
+                <viewController title="RSSHub" storyboardIdentifier="RSSHub" id="RH2-VC-RSSHub" customClass="RSSHubPreferencesViewController" customModule="NetNewsWire" customModuleProvider="target" sceneMemberID="viewController">
+                    <view key="view" id="RH3-VW-RSSHub">
+                        <rect key="frame" x="0.0" y="0.0" width="512" height="320"/>
+                        <autoresizingMask key="autoresizingMask"/>
+                    </view>
+                </viewController>
+                <customObject id="RH4-FR-RSSHub" userLabel="First Responder" customClass="NSResponder" sceneMemberID="firstResponder"/>
+            </objects>
+            <point key="canvasLocation" x="-36" y="897"/>
+        </scene>
         <!--Accounts Preferences View Controller-->
         <scene sceneID="Rsj-41-ZOj">
             <objects>

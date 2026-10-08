@@ -10,6 +10,7 @@
                 <outlet property="addButton" destination="dtI-Hu-rFb" id="D11-zR-dWH"/>
                 <outlet property="folderPopupButton" destination="6vt-DL-mVR" id="98M-xt-ZYU"/>
                 <outlet property="nameTextField" destination="TzV-3k-fXd" id="h4h-5v-4cY"/>
+                <outlet property="resolvedURLHintLabel" destination="RsH-hint-001" id="RsH-hint-outlet-001"/>
                 <outlet property="urlTextField" destination="gbr-mI-Uzj" id="kgQ-t7-wwg"/>
                 <outlet property="window" destination="QvC-M9-y7g" id="7rH-S2-LF4"/>
             </connections>
@@ -47,6 +48,14 @@
                         <connections>
                             <outlet property="delegate" destination="-2" id="gcI-CI-e5I"/>
                         </connections>
+                    </textField>
+                    <textField hidden="YES" horizontalHuggingPriority="251" verticalHuggingPriority="750" translatesAutoresizingMaskIntoConstraints="NO" id="RsH-hint-001" userLabel="Resolved URL Hint">
+                        <rect key="frame" x="74" y="106" width="386" height="14"/>
+                        <textFieldCell key="cell" scrollable="YES" lineBreakMode="clipping" sendsActionOnEndEditing="YES" title="" id="RsH-hint-cell-001">
+                            <font key="font" metaFont="system"/>
+                            <color key="textColor" name="secondaryLabelColor" catalog="System" colorSpace="catalog"/>
+                            <color key="backgroundColor" name="controlColor" catalog="System" colorSpace="catalog"/>
+                        </textFieldCell>
                     </textField>
                     <textField focusRingType="none" horizontalHuggingPriority="251" verticalHuggingPriority="750" translatesAutoresizingMaskIntoConstraints="NO" id="sM9-DX-M0c">
                         <rect key="frame" x="22" y="102" width="46" height="16"/>
@@ -139,7 +148,10 @@ DQ
                     <constraint firstItem="gbr-mI-Uzj" firstAttribute="leading" secondItem="6vt-DL-mVR" secondAttribute="leading" id="Vwf-fS-9Rm"/>
                     <constraint firstItem="QcY-PB-8Y0" firstAttribute="top" secondItem="6vt-DL-mVR" secondAttribute="bottom" constant="20" id="ZJN-wW-th6"/>
                     <constraint firstItem="dtI-Hu-rFb" firstAttribute="leading" secondItem="hXq-IS-19x" secondAttribute="trailing" constant="12" symbolic="YES" id="ahD-oU-iFu"/>
-                    <constraint firstItem="TzV-3k-fXd" firstAttribute="top" secondItem="gbr-mI-Uzj" secondAttribute="bottom" constant="10" symbolic="YES" id="fhp-me-TNc"/>
+                    <constraint firstItem="TzV-3k-fXd" firstAttribute="top" secondItem="RsH-hint-001" secondAttribute="bottom" constant="10" symbolic="YES" id="fhp-me-TNc"/>
+                    <constraint firstItem="RsH-hint-001" firstAttribute="leading" secondItem="gbr-mI-Uzj" secondAttribute="leading" id="RsH-cn-002"/>
+                    <constraint firstItem="RsH-hint-001" firstAttribute="trailing" secondItem="gbr-mI-Uzj" secondAttribute="trailing" id="RsH-cn-003"/>
+                    <constraint firstItem="RsH-hint-001" firstAttribute="top" secondItem="gbr-mI-Uzj" secondAttribute="bottom" constant="6" id="RsH-cn-001"/>
                     <constraint firstItem="sM9-DX-M0c" firstAttribute="trailing" secondItem="hVI-F6-nNT" secondAttribute="trailing" id="hsV-Xx-H8w"/>
                     <constraint firstItem="dNV-oD-vzR" firstAttribute="trailing" secondItem="hVI-F6-nNT" secondAttribute="trailing" id="jBr-jI-iAA"/>
                     <constraint firstAttribute="trailing" secondItem="dtI-Hu-rFb" secondAttribute="trailing" constant="20" symbolic="YES" id="kEo-af-SUe"/>

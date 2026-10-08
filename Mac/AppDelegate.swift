@@ -164,6 +164,11 @@ let appName = "NetNewsWire"
 
 	func applicationDidFinishLaunching(_ note: Notification) {
 
+		// Must be installed before any feed URL is validated.
+		FeedURLResolver.install(RSSHubResolver())
+		FeedRequestAuthorization.provider = RSSHubSession.shared
+		Task { await RSSHubSession.shared.restore() }
+
 		Task {
 			await WebViewConfiguration.compileContentBlockingRules()
 		}

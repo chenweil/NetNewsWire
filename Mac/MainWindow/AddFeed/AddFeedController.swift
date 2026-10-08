@@ -27,12 +27,15 @@ import RSParser
 	private var addFeedWindowController: AddFeedWindowController?
 	private var foundFeedURLString: String?
 	private var titleFromFeed: String?
+	private var attemptedBrowserVerification = false
+	private var verificationWindow: NSWindow?
 
 	init(hostWindow: NSWindow) {
 		self.hostWindow = hostWindow
 	}
 
 	func showAddFeedSheet(_ urlString: String? = nil, _ name: String? = nil, _ account: Account? = nil, _ folder: Folder? = nil) {
+		attemptedBrowserVerification = false
 		let folderTreeControllerDelegate = FolderTreeControllerDelegate()
 		let folderTreeController = TreeController(delegate: folderTreeControllerDelegate)
 
@@ -55,37 +58,66 @@ import RSParser
 			return
 		}
 		let account = accountAndFolderSpecifier.account
+		let resolvedURL = RSSHubResolver().resolvedURL(for: url.absoluteString) ?? url
 
-		if account.hasFeed(withURL: url.absoluteString) {
-			showAlreadySubscribedError(url.absoluteString)
+		if account.hasFeed(withURL: resolvedURL.absoluteString) {
+			showAlreadySubscribedError(resolvedURL.absoluteString)
 			return
 		}
 
+		beginShowingProgress()
 		account.createFeed(url: url.absoluteString, name: title, container: container, validateFeed: true) { result in
 
-			DispatchQueue.main.async {
-				self.endShowingProgress()
-			}
+			self.endShowingProgress()
 
 			switch result {
 			case .success(let feed):
 				NotificationCenter.default.post(name: .UserDidAddFeed, object: self, userInfo: [UserInfoKey.feed: feed])
 			case .failure(let error):
-				switch error {
+				// Convert only when the user actually typed a rsshub:// URL;
+				// plain feeds that happen to live on the instance host keep
+				// their original errors.
+				let presentedError = RSSHubError.subscriptionFailure(forUserEnteredURL: url.absoluteString, underlying: error) ?? error
+				if let rssHubError = presentedError as? RSSHubError,
+					!self.attemptedBrowserVerification,
+					account.type == .onMyMac || account.type == .cloudKit {
+					switch rssHubError {
+					case .accessDenied, .browserVerificationRequired:
+						self.attemptedBrowserVerification = true
+						let controller = RSSHubVerificationViewController(urlString: url.absoluteString)
+						controller.onVerified = { [weak self] in
+							guard let self, let addFeedWindowController = self.addFeedWindowController else {
+								return
+								}
+							self.addFeedWindowController(addFeedWindowController, userEnteredURL: url, userEnteredTitle: title, container: container)
+						}
+						let window = NSWindow(contentViewController: controller)
+						window.title = NSLocalizedString("Verify RSSHub Feed", comment: "RSSHub verification")
+						self.verificationWindow = window
+						DispatchQueue.main.async {
+							self.hostWindow.beginSheet(window) { [weak self] _ in
+								self?.verificationWindow = nil
+							}
+						}
+						return
+					default:
+						break
+					}
+				}
+				switch presentedError {
 				case AccountError.createErrorAlreadySubscribed:
-					self.showAlreadySubscribedError(url.absoluteString)
+					self.showAlreadySubscribedError(resolvedURL.absoluteString)
 				case AccountError.createErrorNotFound:
 					self.showNoFeedsErrorMessage()
 				default:
 					DispatchQueue.main.async {
-						NSApplication.shared.presentError(error)
+						NSApplication.shared.presentError(presentedError)
 					}
 				}
 			}
 
 		}
 
-		beginShowingProgress()
 	}
 
 	func addFeedWindowControllerUserDidCancel(_: AddFeedWindowController) {
@@ -117,7 +149,7 @@ private extension AddFeedController {
 	}
 
 	func closeAddFeedSheet(_ returnCode: NSApplication.ModalResponse) {
-		if let sheetWindow = addFeedWindowController?.window {
+		if let sheetWindow = addFeedWindowController?.window, sheetWindow.sheetParent === hostWindow {
 			hostWindow.endSheet(sheetWindow, returnCode: returnCode)
 		}
 	}
@@ -154,7 +186,7 @@ private extension AddFeedController {
 	// MARK: - Progress
 
 	func beginShowingProgress() {
-		IndeterminateProgressController.beginProgressWithMessage(NSLocalizedString("Finding feed…", comment: "Feed finder"))
+		IndeterminateProgressController.beginProgressWithMessage(NSLocalizedString("Finding feed…", comment: "Feed finder"), for: hostWindow)
 	}
 
 	func endShowingProgress() {

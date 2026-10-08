@@ -63,6 +63,9 @@ import Images
 	func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
 		FaviconGenerator.templateImage = Assets.Images.faviconTemplate
 
+		// Must be installed before any feed URL is validated.
+		FeedURLResolver.install(RSSHubResolver())
+
 		Task {
 			await WebViewConfiguration.compileContentBlockingRules()
 		}

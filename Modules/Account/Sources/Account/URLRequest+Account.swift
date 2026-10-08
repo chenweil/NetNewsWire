@@ -65,6 +65,10 @@ public extension URLRequest {
 			// Translation-feature credential; not used to build URLRequests for
 			// feed accounts. TranslationSettings reads the secret directly.
 			assertionFailure("OpenAI-compatible API key is read by TranslationSettings, not used to build URLRequests.")
+		case .rsshubAccessKey:
+			// RSSHub-feature credential; RSSHubSettings reads the secret and the
+			// macOS feed-fetching path adds it per request, not as account auth.
+			assertionFailure("RSSHub access key is read by RSSHubSettings, not used to build account URLRequests.")
 		}
 
 		guard let conditionalGet = conditionalGet else {

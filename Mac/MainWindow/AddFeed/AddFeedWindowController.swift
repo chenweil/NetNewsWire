@@ -19,10 +19,11 @@ import Account
 }
 
 final class AddFeedWindowController: NSWindowController {
-    @IBOutlet var urlTextField: NSTextField!
-	@IBOutlet var nameTextField: NSTextField!
-	@IBOutlet var addButton: NSButton!
-	@IBOutlet var folderPopupButton: NSPopUpButton!
+@IBOutlet var urlTextField: NSTextField!
+    @IBOutlet var nameTextField: NSTextField!
+    @IBOutlet var addButton: NSButton!
+    @IBOutlet var folderPopupButton: NSPopUpButton!
+	@IBOutlet var resolvedURLHintLabel: NSTextField!
 
 	private var urlString: String?
 	private var initialName: String?
@@ -130,6 +131,22 @@ private extension AddFeedWindowController {
 
 	private func updateUI() {
 		addButton.isEnabled = urlTextField.stringValue.mayBeURL && selectedContainer() != nil
+		updateResolvedURLHint()
+	}
+
+	/// Shows what a `rsshub://` URL will be expanded to, so a misconfigured
+	/// instance is visible before the subscription is attempted.
+	private func updateResolvedURLHint() {
+		guard let resolvedURL = RSSHubResolver().resolvedURL(for: urlTextField.stringValue) else {
+			resolvedURLHintLabel.stringValue = ""
+			resolvedURLHintLabel.isHidden = true
+			return
+		}
+		let format = NSLocalizedString("Will be resolved to %@", comment: "Add Feed sheet hint showing the expanded URL") as NSString
+		resolvedURLHintLabel.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
+		resolvedURLHintLabel.stringValue = NSString.localizedStringWithFormat(format, resolvedURL.absoluteString) as String
+		resolvedURLHintLabel.toolTip = resolvedURL.absoluteString
+		resolvedURLHintLabel.isHidden = false
 	}
 
 	func cancelSheet() {

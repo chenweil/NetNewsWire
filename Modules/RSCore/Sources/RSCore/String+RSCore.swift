@@ -139,7 +139,15 @@ public extension String {
 
 		let s = self.trimmingWhitespace
 
-		if s.isEmpty || (!s.contains(".") && !s.mayBeIPv6URL && !s.hostMayBeLocalhost) {
+		if s.isEmpty {
+			return false
+		}
+
+		// App-specific schemes like `rsshub:` carry a route path rather than a
+		// hostname, so they never contain a dot and would fail the check below.
+		let usesAppSpecificScheme = FeedURLResolver.claims(string: s)
+
+		if !usesAppSpecificScheme && !s.contains(".") && !s.mayBeIPv6URL && !s.hostMayBeLocalhost {
 			return false
 		}
 
@@ -174,6 +182,13 @@ public extension String {
 		}
 
 		var s = self.trimmingWhitespace
+
+		// URLs with an app-specific scheme are resolved by FeedURLResolver, not
+		// rewritten here. Leave them alone so callers see what the user typed.
+		if FeedURLResolver.claims(string: s) {
+			return s
+		}
+
 		var wasFeeds = false
 
 		var lowercaseS = s.lowercased()

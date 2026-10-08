@@ -15,16 +15,16 @@ public typealias DownloadCallback = @MainActor (DownloadResponse, Error?) -> Swi
 /// Simple downloader, for a one-shot download like an image
 /// or a web page. For a download-feeds session, see DownloadSession.
 /// Caches response for a short time for GET requests. May return cached response.
-@MainActor public final class Downloader {
+@MainActor public final class Downloader: NSObject {
 	public static let shared = Downloader()
 	private let urlSession: URLSession
-	private var callbacks = [URL: [(callback: DownloadCallback, fromCache: Bool)]]()
+	private var callbacks = [String: [(callback: DownloadCallback, fromCache: Bool)]]()
+	fileprivate var taskContexts = [String: FeedRequestContext]()
 	private let cache = DownloadCache.shared
 
 	nonisolated private static let logger = Logger(subsystem: Bundle.main.bundleIdentifier!, category: "Downloader")
 
-	private init() {
-		let sessionConfiguration = URLSessionConfiguration.ephemeral
+	init(sessionConfiguration: URLSessionConfiguration = .ephemeral) {
 		sessionConfiguration.requestCachePolicy = .reloadIgnoringLocalCacheData
 		sessionConfiguration.httpShouldSetCookies = false
 		sessionConfiguration.httpCookieAcceptPolicy = .never
@@ -35,7 +35,11 @@ public typealias DownloadCallback = @MainActor (DownloadResponse, Error?) -> Swi
 			sessionConfiguration.httpAdditionalHeaders = userAgentHeaders
 		}
 
-		urlSession = URLSession(configuration: sessionConfiguration)
+		// A delegate proxy avoids URLSession retaining this downloader forever.
+		let redirectDelegate = DownloaderRedirectDelegate()
+		urlSession = URLSession(configuration: sessionConfiguration, delegate: redirectDelegate, delegateQueue: .main)
+		super.init()
+		redirectDelegate.downloader = self
 	}
 
 	deinit {
@@ -74,10 +78,12 @@ public typealias DownloadCallback = @MainActor (DownloadResponse, Error?) -> Swi
 		}
 
 		let isCacheableRequest = urlRequest.httpMethod == HTTPMethod.get
+		let context = FeedRequestAuthorization.context(for: url)
+		let cacheKey = url.absoluteString + (context.map { "#authorization=" + $0.cacheIdentifier } ?? "")
 
 		// Return cached record if available.
 		if isCacheableRequest {
-			if let cachedRecord = cache[url.absoluteString] {
+			if let cachedRecord = cache[cacheKey] {
 				Self.logger.debug("Downloader: returning cached record for \(url)")
 				callback(DownloadResponse(data: cachedRecord.data, response: cachedRecord.response, returnedFromCache: true), nil)
 				return
@@ -85,46 +91,63 @@ public typealias DownloadCallback = @MainActor (DownloadResponse, Error?) -> Swi
 		}
 
 		// Add callback. If there is already a download in progress for this URL, return early.
-		if callbacks[url] == nil {
+		if callbacks[cacheKey] == nil {
 			Self.logger.debug("Downloader: downloading \(url)")
-			callbacks[url] = [(callback, false)]
+			callbacks[cacheKey] = [(callback, false)]
 		} else {
 			// A download is already in progress for this URL. Don’t start a separate download.
 			// Add the callback to the callbacks array for this URL. This caller is coalesced
 			// onto the in-progress download, so it makes no network request of its own.
 			Self.logger.debug("Downloader: download in progress for \(url) — adding callback")
-			callbacks[url]?.append((callback, true))
+			callbacks[cacheKey]?.append((callback, true))
 			return
 		}
 
 		var urlRequestToUse = urlRequest
 		urlRequestToUse.addSpecialCaseUserAgentIfNeeded()
+		urlRequestToUse = context?.prepare(urlRequestToUse) ?? urlRequestToUse
 
 		let task = urlSession.dataTask(with: urlRequestToUse) { (data, response, error) in
 
 			if isCacheableRequest {
 				Self.logger.debug("Downloader: caching response for \(url)")
-				self.cache.add(url.absoluteString, data: data, response: response)
+				self.cache.add(cacheKey, data: data, response: response)
 			}
 
 			Task { @MainActor in
-				self.callAndReleaseCallbacks(url, data, response, error)
+				self.taskContexts[cacheKey] = nil
+				self.callAndReleaseCallbacks(cacheKey, url: url, data, response, error)
 			}
 		}
+		task.taskDescription = cacheKey
+		taskContexts[cacheKey] = context
 		task.resume()
+	}
+}
+
+@MainActor private final class DownloaderRedirectDelegate: NSObject, @preconcurrency URLSessionTaskDelegate {
+	weak var downloader: Downloader?
+
+	func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) {
+		var redirectedRequest = request
+		if let key = task.taskDescription, let context = downloader?.taskContexts[key] {
+			redirectedRequest = context.prepareRedirect(request)
+		}
+		redirectedRequest.addSpecialCaseUserAgentIfNeeded()
+		completionHandler(redirectedRequest)
 	}
 }
 
 private extension Downloader {
 
-	func callAndReleaseCallbacks(_ url: URL, _ data: Data? = nil, _ response: URLResponse? = nil, _ error: Error? = nil) {
+	func callAndReleaseCallbacks(_ cacheKey: String, url: URL, _ data: Data? = nil, _ response: URLResponse? = nil, _ error: Error? = nil) {
 		assert(Thread.isMainThread)
 
 		defer {
-			callbacks[url] = nil
+			callbacks[cacheKey] = nil
 		}
 
-		guard let callbacksForURL = callbacks[url] else {
+		guard let callbacksForURL = callbacks[cacheKey] else {
 			assertionFailure("Downloader: downloaded URL \(url) but no callbacks found")
 			Self.logger.fault("Downloader: downloaded URL \(url) but no callbacks found")
 			return

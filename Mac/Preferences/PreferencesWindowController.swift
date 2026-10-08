@@ -26,6 +26,7 @@ private struct ToolbarItemIdentifier {
 	static let Accounts = "Accounts"
 	static let Advanced = "Advanced"
 	static let Translation = "Translation"
+	static let RSSHub = "RSSHub"
 }
 
 final class PreferencesWindowController: NSWindowController, NSToolbarDelegate {
@@ -46,6 +47,9 @@ final class PreferencesWindowController: NSWindowController, NSToolbarDelegate {
 		specs += [PreferencesToolbarItemSpec(identifierRawValue: ToolbarItemIdentifier.Translation,
 											 name: NSLocalizedString("Translation", comment: "Preferences"),
 											 image: NSImage(systemSymbolName: "character.bubble", accessibilityDescription: "Translation"))]
+		specs += [PreferencesToolbarItemSpec(identifierRawValue: ToolbarItemIdentifier.RSSHub,
+											 name: NSLocalizedString("RSSHub", comment: "Preferences"),
+											 image: NSImage(systemSymbolName: "dot.radiowaves.left.and.right", accessibilityDescription: "RSSHub"))]
 		return specs
 	}()
 

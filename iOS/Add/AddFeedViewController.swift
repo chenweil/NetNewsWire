@@ -24,6 +24,7 @@ final class AddFeedViewController: UITableViewController {
 	private var userCancelled = false
 
 	private let activityIndicator = UIActivityIndicatorView(style: .medium)
+	private let resolvedURLHintLabel = UILabel()
 
 	var initialFeed: String?
 	var initialFeedName: String?
@@ -58,6 +59,8 @@ final class AddFeedViewController: UITableViewController {
 		}
 
 		updateFolderLabel()
+		setUpResolvedURLHintLabel()
+		updateResolvedURLHint()
 
 		tableView.register(UINib(nibName: "AddFeedSelectFolderTableViewCell", bundle: nil), forCellReuseIdentifier: "AddFeedSelectFolderTableViewCell")
 
@@ -91,7 +94,10 @@ final class AddFeedViewController: UITableViewController {
 			account = containerAccount
 		}
 
-		if account!.hasFeed(withURL: url.absoluteString) {
+		let userEnteredURLString = normalizedURLString
+		let resolvedURL = RSSHubResolver().resolvedURL(for: userEnteredURLString)
+
+		if account!.hasFeed(withURL: (resolvedURL ?? url).absoluteString) {
 			presentError(AccountError.createErrorAlreadySubscribed)
  			return
 		}
@@ -117,7 +123,8 @@ final class AddFeedViewController: UITableViewController {
 				self.addButton.isEnabled = true
 				self.activityIndicator.stopAnimating()
 				self.addButton.customView = nil
-				self.presentError(error)
+				let presented = RSSHubError.subscriptionFailure(forUserEnteredURL: userEnteredURLString, underlying: error) ?? error
+				self.presentError(presented)
 			}
 
 		}
@@ -178,6 +185,35 @@ private extension AddFeedViewController {
 
 	func updateUI() {
 		addButton.isEnabled = (urlTextField.text?.mayBeURL ?? false)
+		updateResolvedURLHint()
+	}
+
+	private func setUpResolvedURLHintLabel() {
+		resolvedURLHintLabel.font = .preferredFont(forTextStyle: .footnote)
+		resolvedURLHintLabel.textColor = .secondaryLabel
+		resolvedURLHintLabel.numberOfLines = 2
+		resolvedURLHintLabel.textAlignment = .center
+		resolvedURLHintLabel.adjustsFontSizeToFitWidth = true
+		resolvedURLHintLabel.frame = CGRect(x: 0, y: 0, width: tableView.bounds.width, height: 0)
+		resolvedURLHintLabel.isHidden = true
+		tableView.tableFooterView = resolvedURLHintLabel
+	}
+
+	/// Shows what a `rsshub://` URL will be expanded to, so a misconfigured
+	/// instance is visible before the subscription is attempted.
+	private func updateResolvedURLHint() {
+		guard let text = urlTextField.text, let resolvedURL = RSSHubResolver().resolvedURL(for: text) else {
+			resolvedURLHintLabel.isHidden = true
+			resolvedURLHintLabel.text = nil
+			resolvedURLHintLabel.frame = CGRect(x: 0, y: 0, width: tableView.bounds.width, height: 0)
+			tableView.tableFooterView = resolvedURLHintLabel
+			return
+		}
+		let format = NSLocalizedString("Will be resolved to %@", comment: "Add Feed sheet hint showing the expanded URL")
+		resolvedURLHintLabel.text = NSString.localizedStringWithFormat(format as NSString, resolvedURL.absoluteString)
+		resolvedURLHintLabel.isHidden = false
+		resolvedURLHintLabel.frame = CGRect(x: 0, y: 0, width: tableView.bounds.width, height: 48)
+		tableView.tableFooterView = resolvedURLHintLabel
 	}
 
 	func updateFolderLabel() {

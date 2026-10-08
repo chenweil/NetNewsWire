@@ -40,6 +40,7 @@ final class SettingsViewController: UITableViewController {
 		case importSubscriptions = 0
 		case exportSubscriptions = 1
 		case addNetNewsWireNewsFeed = 2
+		case rsshub = 3
 	}
 
 	private enum TimelineRow: Int {
@@ -252,6 +253,8 @@ final class SettingsViewController: UITableViewController {
 			case .addNetNewsWireNewsFeed:
 				addFeed()
 				tableView.selectRow(at: nil, animated: true, scrollPosition: .none)
+			case .rsshub:
+				self.navigationController?.pushViewController(UIHostingController(rootView: RSSHubSettingsView()), animated: true)
 			default:
 				break
 			}

@@ -14,13 +14,35 @@ import RSCore
 import ActivityLog
 
 public enum FeedFinderError: LocalizedError {
-	case feedNotFound
+	case feedNotFound(statusCode: Int?)
+	case browserVerificationRequired(statusCode: Int?)
+
+	/// The HTTP status code behind the failure, when one was received.
+	public var statusCode: Int? {
+		switch self {
+		case .feedNotFound(let statusCode), .browserVerificationRequired(let statusCode):
+			return statusCode
+		}
+	}
 
 	public var errorDescription: String? {
 		switch self {
 		case .feedNotFound:
 			return NSLocalizedString("The feed couldn’t be found and can’t be added.", comment: "Not found")
+		case .browserVerificationRequired:
+			return NSLocalizedString("This feed requires verification in a browser.", comment: "Feed verification")
 		}
+	}
+}
+
+extension FeedFinderError: FeedRetrievalFailure {
+	public var requiresBrowserVerification: Bool {
+		if case .browserVerificationRequired = self { return true }
+		return false
+	}
+
+	public var httpStatusCode: Int? {
+		statusCode
 	}
 }
 
@@ -59,6 +81,9 @@ public final class FeedFinder {
 		let downloadResponse = try await downloadAndLog(url)
 		let data = downloadResponse.data
 		let response = downloadResponse.response
+		if response?.requiresBrowserVerification == true {
+			throw FeedFinderError.browserVerificationRequired(statusCode: response?.statusCodeIfReceived)
+		}
 
 		if response?.forcedStatusCode == 404 {
 			if var urlComponents = URLComponents(url: url, resolvingAgainstBaseURL: false), urlComponents.host == "micro.blog" {
@@ -68,15 +93,15 @@ public final class FeedFinder {
 					return (Set([microblogFeedSpecifier]), .microblogJSON)
 				}
 			}
-			throw FeedFinderError.feedNotFound
+			throw FeedFinderError.feedNotFound(statusCode: 404)
 		}
 
 		guard let data, let response else {
-			throw FeedFinderError.feedNotFound
+			throw FeedFinderError.feedNotFound(statusCode: downloadResponse.response?.statusCodeIfReceived)
 		}
 
 		if !response.statusIsOK || data.isEmpty {
-			throw FeedFinderError.feedNotFound
+			throw FeedFinderError.feedNotFound(statusCode: response.statusCodeIfReceived)
 		}
 
 		if FeedFinder.isFeed(data, url.absoluteString) {
@@ -85,7 +110,7 @@ public final class FeedFinder {
 		}
 
 		if !FeedFinder.isHTML(data) {
-			throw FeedFinderError.feedNotFound
+			throw FeedFinderError.feedNotFound(statusCode: response.statusCodeIfReceived)
 		}
 
 		return try await FeedFinder.findFeedsInHTMLPage(htmlData: data, urlString: url.absoluteString)
@@ -176,7 +201,7 @@ private extension FeedFinder {
 		if didFindFeedInHTMLHead {
 			return (Set(feedSpecifiers.values), .htmlHead)
 		} else if feedSpecifiersToDownload.isEmpty {
-			throw FeedFinderError.feedNotFound
+			throw FeedFinderError.feedNotFound(statusCode: nil)
 		} else {
 			let result = await downloadFeedSpecifiers(feedSpecifiersToDownload, feedSpecifiers: feedSpecifiers)
 			return (result, .candidates)

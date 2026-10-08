@@ -650,9 +650,11 @@ public enum FetchType {
 	}
 
 	func newFeed(with opmlFeedSpecifier: OPMLFeedSpecifier) -> Feed {
-		let feedURL = opmlFeedSpecifier.feedURL
+		// OPML files exported by apps that keep `rsshub://` verbatim need
+		// expanding. Best-effort: a bad instance shouldn’t abort an import.
+		let feedURL = (try? FeedURLResolver.resolve(opmlFeedSpecifier.feedURL)) ?? opmlFeedSpecifier.feedURL
 		let settings = feedSettings(feedURL: feedURL, feedID: feedURL)
-		let feed = Feed(account: self, url: opmlFeedSpecifier.feedURL, settings: settings)
+		let feed = Feed(account: self, url: feedURL, settings: settings)
 		if let feedTitle = opmlFeedSpecifier.title {
 			if feed.name == nil {
 				feed.name = feedTitle
@@ -679,7 +681,8 @@ public enum FetchType {
 	public func createFeed(url: String, name: String?, container: Container, validateFeed: Bool, completion: @escaping (Result<Feed, Error>) -> Void) {
 		Task { @MainActor in
 			do {
-				let feed = try await delegate.createFeed(url: url, name: name, container: container, validateFeed: validateFeed)
+				let resolvedURLString = try FeedURLResolver.resolve(url)
+				let feed = try await delegate.createFeed(url: resolvedURLString, name: name, container: container, validateFeed: validateFeed)
 				completion(.success(feed))
 			} catch {
 				completion(.failure(error))

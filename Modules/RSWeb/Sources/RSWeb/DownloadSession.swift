@@ -21,8 +21,15 @@ import RSCore
 	func downloadSession(_ downloadSession: DownloadSession, downloadDidComplete: URL, response: URLResponse?, data: Data, error: NSError?)
 	func downloadSession(_ downloadSession: DownloadSession, shouldContinueAfterReceivingData: Data, url: URL) -> Bool
 	func downloadSession(_ downloadSession: DownloadSession, httpError statusCode: Int, url: URL)
+	func downloadSession(_ downloadSession: DownloadSession, requiresBrowserVerification url: URL)
 	func downloadSession(_ downloadSession: DownloadSession, didFollowRedirectFor url: URL, from fromURL: URL, to toURL: URL, statusCode: Int)
 	func downloadSessionDidComplete(_ downloadSession: DownloadSession)
+}
+
+public extension DownloadSessionDelegate {
+	func downloadSession(_ downloadSession: DownloadSession, requiresBrowserVerification url: URL) {
+		self.downloadSession(downloadSession, httpError: 403, url: url)
+	}
 }
 
 struct HTTP4xxResponse {
@@ -59,16 +66,20 @@ struct HTTP4xxResponse {
 	/// URLs with 400-499 responses (except for 429).
 	/// These URLs are skipped for a period of time.
 	private var http4xxResponses = [URL: HTTP4xxResponse]()
+	private var authorizationIdentifiers = [URL: String]()
 
 	private static let logger = Logger(subsystem: Bundle.main.bundleIdentifier!, category: "DownloadSession")
 
-	public init(delegate: DownloadSessionDelegate) {
+	public convenience init(delegate: DownloadSessionDelegate) {
+		self.init(delegate: delegate, sessionConfiguration: .ephemeral)
+	}
+
+	init(delegate: DownloadSessionDelegate, sessionConfiguration: URLSessionConfiguration) {
 
 		self.delegate = delegate
 
 		super.init()
 
-		let sessionConfiguration = URLSessionConfiguration.ephemeral
 		sessionConfiguration.requestCachePolicy = .reloadIgnoringLocalCacheData
 		sessionConfiguration.timeoutIntervalForRequest = 15.0
 		sessionConfiguration.httpShouldSetCookies = false
@@ -131,11 +142,7 @@ extension DownloadSession: @preconcurrency URLSessionTaskDelegate {
 			}
 
 			guard let info = infoForTask(task) else {
-				if let url = task.originalRequest?.url {
-					Self.logger.debug("DownloadSession: no task info found for \(url)")
-				} else {
-					Self.logger.debug("DownloadSession: no task info found for unknown URL")
-				}
+				Self.logger.debug("DownloadSession: no task info found for completed task")
 				return
 			}
 
@@ -147,18 +154,19 @@ extension DownloadSession: @preconcurrency URLSessionTaskDelegate {
 
 	public func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) {
 
+		let context = infoForTask(task)?.requestContext
 		if Self.redirectStatusCodes.contains(response.statusCode) {
-			if let oldURL = task.originalRequest?.url, let newURL = request.url {
-				cacheRedirect(oldURL, newURL)
+			if let oldURL = infoForTask(task)?.url, let newURL = request.url {
+				cacheRedirect(oldURL, context?.subscriptionURL(for: newURL) ?? newURL)
 			}
 		}
 
 		if let taskInfo = infoForTask(task), let toURL = request.url {
-			let fromURL = response.url ?? taskInfo.url
-			delegate.downloadSession(self, didFollowRedirectFor: taskInfo.url, from: fromURL, to: toURL, statusCode: response.statusCode)
+			let fromURL = response.url.map { context?.subscriptionURL(for: $0) ?? $0 } ?? taskInfo.url
+			delegate.downloadSession(self, didFollowRedirectFor: taskInfo.url, from: fromURL, to: context?.subscriptionURL(for: toURL) ?? toURL, statusCode: response.statusCode)
 		}
 
-		var modifiedRequest = request
+		var modifiedRequest = context?.prepareRedirect(request) ?? request
 
 		modifiedRequest.addSpecialCaseUserAgentIfNeeded()
 
@@ -185,12 +193,17 @@ extension DownloadSession: @preconcurrency URLSessionDataDelegate {
 				delegate.downloadSession(self, didReceiveResponse: taskInfo.url)
 			}
 
-			let statusCode = response.forcedStatusCode
+			let challenged = response.requiresBrowserVerification
+			let statusCode = challenged ? 403 : response.forcedStatusCode
 			if statusCode >= 400 {
-				Self.logger.debug("DownloadSession: canceling task due to >= 400 response \(response)")
+				Self.logger.debug("DownloadSession: canceling task due to HTTP \(statusCode)")
 
 				if let url = taskInfo?.url {
-					delegate.downloadSession(self, httpError: statusCode, url: url)
+					if challenged {
+						delegate.downloadSession(self, requiresBrowserVerification: url)
+					} else {
+						delegate.downloadSession(self, httpError: statusCode, url: url)
+					}
 				}
 
 				completionHandler(.cancel)
@@ -198,7 +211,7 @@ extension DownloadSession: @preconcurrency URLSessionDataDelegate {
 
 				if statusCode == HTTPResponseCode.tooManyRequests {
 					handle429Response(dataTask, response)
-				} else if (400...499).contains(statusCode), let url = response.url {
+				} else if (400...499).contains(statusCode), let url = taskInfo?.url {
 					cache4xxResponse(url: url, response: HTTP4xxResponse(statusCode))
 				}
 
@@ -238,6 +251,13 @@ private extension DownloadSession {
 
 		// If received permanent redirect earlier, use that URL.
 		let urlToUse = cachedRedirect(for: url) ?? url
+		let context = FeedRequestAuthorization.context(for: url)
+		let authorizationIdentifier = context?.cacheIdentifier ?? ""
+		if authorizationIdentifiers[url] != authorizationIdentifier {
+			http4xxResponses[url] = nil
+			http4xxResponses[urlToUse] = nil
+			authorizationIdentifiers[url] = authorizationIdentifier
+		}
 
 		if requestShouldBeDroppedDueToActive429(urlToUse) {
 			Self.logger.info("DownloadSession: Dropping request for previous 429: \(urlToUse)")
@@ -256,13 +276,14 @@ private extension DownloadSession {
 				conditionalGetInfo.addRequestHeadersToURLRequest(&request)
 			}
 			request.addSpecialCaseUserAgentIfNeeded()
-			return request
+			return context?.prepare(request) ?? request
 		}()
 
 		Self.logger.debug("DownloadSession: adding dataTask for \(urlToUse)")
 		let task = urlSession.dataTask(with: urlRequest)
 
 		let info = DownloadInfo(url)
+		info.requestContext = context
 		taskIdentifierToInfoDictionary[task.taskIdentifier] = info
 
 		tasksPending.insert(task)
@@ -521,6 +542,7 @@ private final class DownloadInfo {
 	let url: URL
 	var data = Data()
 	var urlResponse: URLResponse?
+	var requestContext: FeedRequestContext?
 
 	init(_ url: URL) {
 

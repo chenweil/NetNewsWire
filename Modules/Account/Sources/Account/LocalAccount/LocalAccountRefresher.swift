@@ -357,6 +357,16 @@ import os
 		reportFeedRefreshError(feed: feed, error: error, activityKind: .refreshFeedContent(feedURL: feed.url))
 	}
 
+	func downloadSession(_ downloadSession: DownloadSession, requiresBrowserVerification url: URL) {
+		guard let feed = urlToFeedDictionary[url.absoluteString] else {
+			return
+		}
+		feed.lastResponseCode = 403
+		let message = NSLocalizedString("This feed requires browser verification. Verify the feed in Settings or Preferences, then refresh again.", comment: "Feed verification")
+		let error = NSError(domain: "NetNewsWire", code: 403, userInfo: [NSLocalizedDescriptionKey: message])
+		reportFeedRefreshError(feed: feed, error: error, activityKind: .refreshFeedContent(feedURL: feed.url))
+	}
+
 	private func reportFeedRefreshError(feed: Feed, error: Error, activityKind: ActivityKind) {
 		if let activityOwner {
 			ActivityLog.shared.didFail(activityOwner, kind: activityKind, error: error)

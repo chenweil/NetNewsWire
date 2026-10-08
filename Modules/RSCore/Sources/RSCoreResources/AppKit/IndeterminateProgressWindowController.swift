@@ -13,7 +13,7 @@ import AppKit
 	private static var windowController: IndeterminateProgressWindowController?
 	private static var runningProgressWindow = false
 
-	public static func beginProgressWithMessage(_ message: String) {
+	public static func beginProgressWithMessage(_ message: String, for hostWindow: NSWindow? = nil) {
 		if runningProgressWindow {
 			assertionFailure("Expected !runningProgressWindow.")
 			endProgress()
@@ -21,7 +21,18 @@ import AppKit
 
 		runningProgressWindow = true
 		windowController = IndeterminateProgressWindowController(message: message)
-		NSApplication.shared.runModal(for: windowController!.window!)
+		guard let window = windowController?.window else {
+			runningProgressWindow = false
+			windowController = nil
+			return
+		}
+		if let hostWindow {
+			// A Swift task must return to its executor so the download task can
+			// run. A sheet blocks window input without entering a nested runModal.
+			hostWindow.beginSheet(window)
+		} else {
+			NSApplication.shared.runModal(for: window)
+		}
 	}
 
 	public static func endProgress() {
@@ -31,7 +42,11 @@ import AppKit
 		}
 
 		runningProgressWindow = false
-		NSApplication.shared.stopModal()
+		if let window = windowController?.window, let hostWindow = window.sheetParent {
+			hostWindow.endSheet(window)
+		} else {
+			NSApplication.shared.stopModal()
+		}
 		windowController?.close()
 		windowController = nil
 	}

@@ -64,6 +64,9 @@ public enum CredentialsType: String, Sendable {
 	/// API key for the OpenAI-compatible translation engine. The username is
 	/// unused; only the `secret` field is consulted by `TranslationSettings`.
 	case openAICompatibleAPIKey = "openaiCompatibleAPIKey"
+	/// Access key for the configured RSSHub instance. The username is unused;
+	/// only the `secret` field is consulted by `RSSHubSettings`.
+	case rsshubAccessKey = "rsshubAccessKey"
 }
 
 nonisolated public struct Credentials: Equatable, Sendable {
