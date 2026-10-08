@@ -120,6 +120,20 @@ public enum TranslationError: LocalizedError, Sendable, Equatable {
 	}
 }
 
+// MARK: - Display Mode
+
+/// How the article view presents a translated article (PRD F-10). The
+/// toggle affects the body only; the translated title is always shown in
+/// the header when a translation is available.
+public enum TranslationDisplayMode: String, Sendable, CaseIterable {
+	/// Translated body only. Default.
+	case translation
+	/// Original body, a separator, then the translated body.
+	case bilingual
+	/// Original body only.
+	case original
+}
+
 // MARK: - Status
 
 /// Lifecycle state of a single translation request, surfaced to the inline

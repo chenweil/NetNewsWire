@@ -1,5 +1,40 @@
 # NetNewsWire Translation — Progress Log
 
+## 2026-10-08 — Issue #9 Complete ✅
+
+### 实现内容
+
+**TranslationDisplayMode** (Shared/Translation/TranslationEngine.swift)
+- 三态枚举: `translation`（默认）/ `bilingual` / `original`
+- 持久化在 `TranslationSettings.displayMode`（key: `translation.displayMode`）
+
+**DetailWebViewController.swift**
+- `.translated` 状态一次性渲染三个内容块: 译文标题头 + 原文 body（`data-translation-mode-content="original"`）+ `<hr>` 分隔线 + 译文 body
+- 新增 JS bridge `window.setTranslationDisplayMode(mode)`: 切换仅改可见性，不重新 fetch、不重新渲染
+- 新增 `setTranslationDisplayMode(_:)` 公开方法；模式变更经 DetailViewController 从工具栏转发
+- 顺带重构: `currentBodyInfo` helper 统一 feed body / extracted body 的取值（request / retry / render 三处复用）
+
+**MainWindowController.swift**
+- 新增 toolbar item `.translationDisplayMode`（NSSegmentedControl, 三段: Translation / Bilingual / Original）
+- `changeTranslationDisplayMode(_:)` action 转发到 DetailViewController
+- 老用户一次性安装逻辑 `installTranslationDisplayModeToolbarItemIfNeeded`（独立 UserDefaults flag，插在 Translate 按钮右侧）
+- 已加入 toolbarAllowedItemIdentifiers / toolbarDefaultItemIdentifiers
+
+**测试**: 49 tests / 5 suites 全绿（新增 3 个 displayMode 设置测试）
+
+```
+Test run with 49 tests in 5 suites passed after 0.042 seconds
+```
+
+### 技术要点
+
+1. **无 re-fetch 切换**: 三个内容块都在 `.translated` HTML 里，JS 只切 `hidden`，满足 PRD F-10 "updates the view without re-fetching"
+2. **初始模式**: 渲染时由 Swift 把当前模式写进 script，首次加载即生效
+3. **打字机效果兼容**: typewriter 只作用于译文块，切模式不重启动画
+4. **流式输出补记**: 此前 streaming（`streamingTranslation` / `streamingRetry` / `streamingFailed` 状态、JS 流式渲染）已实现并通过测试，但未记录在案，现补记
+
+---
+
 ## 2026-06-28 23:19 — Issue #7 Complete ✅
 
 ### 实现内容
@@ -128,35 +163,14 @@ TranslationCoordinator 的核心功能已实现并通过测试：
 | #5 | TranslationCoordinator | Shared/Translation/TranslationCoordinator.swift | 8 | ✅ DONE |
 | #6 | Mac Preferences/Translation/ UI | Mac/Preferences/Translation/TranslationPreferencesViewController.swift | N/A | ✅ DONE |
 | #7 | PreferencesWindowController toolbar 注册 | Mac/Base.lproj/Preferences.storyboard | N/A | ✅ DONE |
+| #8 | WebViewController + JS bridge + streaming + retry | Mac/MainWindow/Detail/DetailWebViewController.swift | N/A | ✅ DONE |
+| #9 | Display mode toggle (译文/对照/原文) | MainWindowController + DetailWebViewController | 3 | ✅ DONE |
 
-**累计测试:** 36 passing
+**累计测试:** 49 passing
 
 ---
 
 ## 待办 Issues
-
-### Issue #6 — Mac Preferences/Translation/ UI
-- 新建 Mac/Preferences/Translation/TranslationPreferencesViewController.swift
-- 控件:
-  - Enable toggle
-  - Target language popup
-  - Engine segmented control
-  - OpenAI sub-settings (base URL/API key/model/测试连接)
-  - Skip-when-source-matches-target toggle
-- 需要 NSViewController + NSUserDefaultsController 绑定
-
-### Issue #8 — WebViewController + JS bridge + status indicator + retry
-- 编辑 Mac/Article/ArticleViewController.swift
-- 注入 TranslationCoordinator
-- 在 webView 加载完成后调用 coordinator.translation(for:...)
-- 实现 updateTranslation(...) JS bridge
-- 添加状态指示器 (idle/translating/translated/failed)
-- 实现 retry 按钮
-
-### Issue #9 — Display mode toggle (译文/对照/原文)
-- 添加 segmented control 到 article toolbar
-- 三态: translation-only / bilingual / original-only
-- JS 调用切换显示
 
 ### Issue #10 — Manual QA pass
 - 按 PRD acceptance checklist (11 项) 验收

@@ -53,4 +53,34 @@ import Testing
 		let settings = TranslationSettings(defaults: defaults)
 		#expect(settings.openAIModel == "gpt-4o-mini")
 	}
+
+	@Test("displayMode defaults to translation")
+	func displayModeDefaultsToTranslation() {
+		let defaults = UserDefaults(suiteName: "translation-tests-\(UUID().uuidString)")!
+		let settings = TranslationSettings(defaults: defaults)
+		#expect(settings.displayMode == .translation)
+	}
+
+	@Test("displayMode round-trips through defaults")
+	func displayModeRoundTripsThroughDefaults() {
+		let defaults = UserDefaults(suiteName: "translation-tests-\(UUID().uuidString)")!
+		let settings = TranslationSettings(defaults: defaults)
+
+		settings.displayMode = .bilingual
+		#expect(settings.displayMode == .bilingual)
+
+		settings.displayMode = .original
+		#expect(settings.displayMode == .original)
+
+		settings.displayMode = .translation
+		#expect(settings.displayMode == .translation)
+	}
+
+	@Test("displayMode falls back to translation on invalid stored value")
+	func displayModeFallsBackOnInvalidStoredValue() {
+		let defaults = UserDefaults(suiteName: "translation-tests-\(UUID().uuidString)")!
+		defaults.set("nonsense", forKey: "translation.displayMode")
+		let settings = TranslationSettings(defaults: defaults)
+		#expect(settings.displayMode == .translation)
+	}
 }

@@ -37,6 +37,7 @@ public final class TranslationSettings: @unchecked Sendable {
 		static let engine = "translation.engine"
 		static let targetLanguage = "translation.targetLanguage"
 		static let skipWhenSourceMatchesTarget = "translation.skipWhenSourceMatchesTarget"
+		static let displayMode = "translation.displayMode"
 		static let openAIBaseURL = "translation.openAI.baseURL"
 		static let openAIModel = "translation.openAI.model"
 	}
@@ -84,6 +85,24 @@ public final class TranslationSettings: @unchecked Sendable {
 			return true
 		}
 		return defaults.bool(forKey: Key.skipWhenSourceMatchesTarget)
+	}
+
+	/// How the article view displays a translated article: translated body
+	/// only, bilingual (original + translated), or original body only.
+	/// Defaults to `translation` (issue #9 / PRD F-10).
+	public var displayMode: TranslationDisplayMode {
+		get {
+			guard
+				let raw = defaults.string(forKey: Key.displayMode),
+				let mode = TranslationDisplayMode(rawValue: raw)
+			else {
+				return .translation
+			}
+			return mode
+		}
+		set {
+			defaults.set(newValue.rawValue, forKey: Key.displayMode)
+		}
 	}
 
 	/// OpenAI-compatible base URL for the long-text fallback engine.

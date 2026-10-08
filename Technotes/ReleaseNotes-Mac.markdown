@@ -1,5 +1,12 @@
 # Mac Release Notes
 
+### 7.1.2 8 October 2026
+
+Added article translation (Mac) — open an article and NetNewsWire translates the title and body into your language. Opt in via Preferences → Translation. On-device Apple Translation by default (free, private, no setup); articles longer than 1500 characters can use an OpenAI-compatible engine (base URL, model, and API key configurable in preferences)
+Added a toolbar control to switch the article view between translation, bilingual, and original display
+Added inline translation status, streaming display for long translations, and a retry button on failure
+Fixed CloudKit entitlement protection and improved ad-hoc DMG packaging
+
 ### 7.1 7106 25 June 2026 — branch: main tag: mac-7.1
 
 Changes since 7.0.6:

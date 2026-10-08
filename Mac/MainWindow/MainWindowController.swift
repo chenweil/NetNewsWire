@@ -20,6 +20,7 @@ enum TimelineSourceMode {
 final class MainWindowController: NSWindowController, NSUserInterfaceValidations {
 	static private let logger = Logger(subsystem: Bundle.main.bundleIdentifier!, category: "MainWindowController")
 	private static let didInstallTranslateToolbarItemKey = "MainWindowToolbarDidInstallTranslateItem"
+	private static let didInstallTranslationDisplayModeItemKey = "MainWindowToolbarDidInstallTranslationDisplayModeItem"
 
 	@IBOutlet var articleThemePopUpButton: NSPopUpButton?
 
@@ -77,6 +78,7 @@ final class MainWindowController: NSWindowController, NSUserInterfaceValidations
 		toolbar.delegate = self
 		self.window?.toolbar = toolbar
 		installTranslateToolbarItemIfNeeded(toolbar)
+		installTranslationDisplayModeToolbarItemIfNeeded(toolbar)
 
 		if let window = window {
 			let point = NSPoint(x: 128, y: 64)
@@ -474,6 +476,17 @@ final class MainWindowController: NSWindowController, NSUserInterfaceValidations
 		detailViewController?.translateCurrentArticle()
 	}
 
+	@IBAction func changeTranslationDisplayMode(_ sender: Any?) {
+		guard let control = sender as? NSSegmentedControl else {
+			return
+		}
+		let selectedIndex = control.selectedSegment
+		guard selectedIndex >= 0, selectedIndex < TranslationDisplayMode.allCases.count else {
+			return
+		}
+		detailViewController?.setTranslationDisplayMode(TranslationDisplayMode.allCases[selectedIndex])
+	}
+
 	@IBAction func markAllAsReadAndGoToNextUnread(_ sender: Any?) {
 		currentTimelineViewController?.markAllAsRead {
 			self.nextUnread(sender)
@@ -806,6 +819,7 @@ extension NSToolbarItem.Identifier {
 	static let markStar = NSToolbarItem.Identifier("markStar")
 	static let readerView = NSToolbarItem.Identifier("readerView")
 	static let translate = NSToolbarItem.Identifier("translate")
+	static let translationDisplayMode = NSToolbarItem.Identifier("translationDisplayMode")
 	static let openInBrowser = NSToolbarItem.Identifier("openInBrowser")
 	static let share = NSToolbarItem.Identifier("share")
 	static let articleThemeMenu = NSToolbarItem.Identifier("articleThemeMenu")
@@ -870,6 +884,25 @@ extension MainWindowController: NSToolbarDelegate {
 			let image = NSImage(systemSymbolName: "character.bubble", accessibilityDescription: title) ?? Assets.Images.articleTheme
 			return buildToolbarButton(.translate, title, image, "translateArticle:")
 
+		case .translationDisplayMode:
+			let description = NSLocalizedString("Translation Display Mode", comment: "Translation display mode")
+			let control = NSSegmentedControl(labels: [
+				NSLocalizedString("Translation", comment: "Translation display mode: translated body only"),
+				NSLocalizedString("Bilingual", comment: "Translation display mode: original and translated bodies"),
+				NSLocalizedString("Original", comment: "Translation display mode: original body only")
+			], trackingMode: .selectOne, target: self, action: #selector(changeTranslationDisplayMode(_:)))
+			control.segmentStyle = .texturedRounded
+			control.font = NSFont.systemFont(ofSize: NSFont.smallSystemFontSize)
+			if let index = TranslationDisplayMode.allCases.firstIndex(of: TranslationSettings.shared.displayMode) {
+				control.selectedSegment = index
+			}
+			let toolbarItem = RSToolbarItem(itemIdentifier: .translationDisplayMode)
+			toolbarItem.autovalidates = true
+			toolbarItem.view = control
+			toolbarItem.toolTip = description
+			toolbarItem.label = description
+			return toolbarItem
+
 		case .share:
 			let title = NSLocalizedString("Share", comment: "Share button")
 			return buildToolbarButton(.share, title, Assets.Images.share, "toolbarShowShareMenu:")
@@ -918,6 +951,7 @@ extension MainWindowController: NSToolbarDelegate {
 			.markStar,
 			.readerView,
 			.translate,
+			.translationDisplayMode,
 			.openInBrowser,
 			.share,
 			.articleThemeMenu,
@@ -941,6 +975,7 @@ extension MainWindowController: NSToolbarDelegate {
 			.nextUnread,
 			.readerView,
 			.translate,
+			.translationDisplayMode,
 			.share,
 			.openInBrowser,
 			.flexibleSpace,
@@ -1473,6 +1508,33 @@ private extension MainWindowController {
 		}
 
 		toolbar.insertItem(withItemIdentifier: .translate, at: insertionIndex)
+	}
+
+	func installTranslationDisplayModeToolbarItemIfNeeded(_ toolbar: NSToolbar) {
+		let defaults = UserDefaults.standard
+		guard !defaults.bool(forKey: Self.didInstallTranslationDisplayModeItemKey) else {
+			return
+		}
+
+		defer {
+			defaults.set(true, forKey: Self.didInstallTranslationDisplayModeItemKey)
+		}
+
+		guard toolbar.existingItem(withIdentifier: .translationDisplayMode) == nil else {
+			return
+		}
+
+		let itemIdentifiers = toolbar.items.map(\.itemIdentifier)
+		let insertionIndex: Int
+		if let translateIndex = itemIdentifiers.firstIndex(of: .translate) {
+			insertionIndex = translateIndex + 1
+		} else if let readerViewIndex = itemIdentifiers.firstIndex(of: .readerView) {
+			insertionIndex = readerViewIndex + 1
+		} else {
+			insertionIndex = toolbar.items.count
+		}
+
+		toolbar.insertItem(withItemIdentifier: .translationDisplayMode, at: insertionIndex)
 	}
 
 	func buildToolbarButton(_ itemIdentifier: NSToolbarItem.Identifier, _ title: String, _ image: NSImage, _ selector: String) -> NSToolbarItem {

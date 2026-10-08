@@ -213,6 +213,17 @@ final class DetailWebViewController: NSViewController {
 		}
 	}
 
+	/// Switches how a translated article's body is displayed (issue #9). The
+	/// mode is persisted; the web view is updated via the JS bridge without
+	/// re-fetching or re-rendering the article.
+	func setTranslationDisplayMode(_ mode: TranslationDisplayMode) {
+		TranslationSettings.shared.displayMode = mode
+		guard isViewLoaded else {
+			return
+		}
+		webView.evaluateJavaScript("window.setTranslationDisplayMode('\(mode.rawValue)');")
+	}
+
 	// MARK: Scrolling
 
 	func canScrollDown() async -> Bool {
@@ -318,6 +329,15 @@ extension DetailWebViewController: WKNavigationDelegate, WKUIDelegate {
 
 private extension DetailWebViewController {
 
+	/// The body HTML and source the article view is currently displaying:
+	/// the extracted body when Reader View is on, the feed body otherwise.
+	var currentBodyInfo: (html: String, source: ArticleTranslation.BodySource) {
+		if case .extracted(_, let extractedArticle, _) = state {
+			return (extractedArticle.content ?? "", .extractedBody)
+		}
+		return (article?.body ?? "", .feedBody)
+	}
+
 	func reloadArticleImage() {
 		guard let article = article else { return }
 
@@ -403,10 +423,13 @@ private extension DetailWebViewController {
 			}
 			return """
 			<div class="translationStatus">\(NSLocalizedString("Translated", comment: "Translation status"))</div>
-			<article>
+			<article data-translation-display>
 			\(titleHTML)
-			<div class="translatedArticleBody articleBody" data-translation-typewriter>\(translation.body)</div>
+			<div class="articleBody" data-translation-mode-content="original">\(currentBodyInfo.html)</div>
+			<hr class="translationSeparator" data-translation-separator>
+			<div class="translatedArticleBody articleBody" data-translation-mode-content="translation" data-translation-typewriter>\(translation.body)</div>
 			\(translationTypewriterScript)
+			\(translationDisplayModeScript)
 			</article>
 			"""
 		case .failed(let message):
@@ -566,6 +589,41 @@ private extension DetailWebViewController {
 		"""
 	}
 
+	/// JS bridge for the display mode toggle (issue #9). All three content
+	/// blocks are rendered once; switching only toggles visibility, so no
+	/// re-fetch or re-render is needed.
+	var translationDisplayModeScript: String {
+		"""
+		<script>
+		(function() {
+			function root() {
+				return document.querySelector("[data-translation-display]");
+			}
+
+			window.setTranslationDisplayMode = function(mode) {
+				const container = root();
+				if (!container) {
+					return false;
+				}
+				const showOriginal = (mode === "bilingual" || mode === "original");
+				const showTranslated = (mode === "bilingual" || mode === "translation");
+				container.querySelectorAll("[data-translation-mode-content]").forEach(function(element) {
+					const isOriginal = (element.dataset.translationModeContent === "original");
+					element.hidden = isOriginal ? !showOriginal : !showTranslated;
+				});
+				const separator = container.querySelector("[data-translation-separator]");
+				if (separator) {
+					separator.hidden = !(showOriginal && showTranslated);
+				}
+				return true;
+			};
+
+			window.setTranslationDisplayMode("\(TranslationSettings.shared.displayMode.rawValue)");
+		})();
+		</script>
+		"""
+	}
+
 	func fetchScrollInfo() async -> ScrollInfo? {
 		await withCheckedContinuation { continuation in
 			self.fetchScrollInfo { scrollInfo in
@@ -656,16 +714,7 @@ private extension DetailWebViewController {
 			}
 
 			// Determine body source and content.
-			let bodySource: ArticleTranslation.BodySource
-			let bodyHTML: String
-
-			if case .extracted(_, let extractedArticle, _) = state {
-				bodySource = .extractedBody
-				bodyHTML = extractedArticle.content ?? ""
-			} else {
-				bodySource = .feedBody
-				bodyHTML = article.body ?? ""
-			}
+			let (bodyHTML, bodySource) = currentBodyInfo
 
 			translationStatus = .translating
 			let articleID = article.articleID
@@ -716,16 +765,7 @@ private extension DetailWebViewController {
 			}
 
 			// Determine body source and content.
-			let bodySource: ArticleTranslation.BodySource
-			let bodyHTML: String
-
-			if case .extracted(_, let extractedArticle, _) = state {
-				bodySource = .extractedBody
-				bodyHTML = extractedArticle.content ?? ""
-			} else {
-				bodySource = .feedBody
-				bodyHTML = article.body ?? ""
-			}
+			let (bodyHTML, bodySource) = currentBodyInfo
 
 			translationStatus = .translating
 			let articleID = article.articleID

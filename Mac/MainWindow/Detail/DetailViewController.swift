@@ -95,6 +95,10 @@ final class DetailViewController: NSViewController, WKUIDelegate {
 		currentWebViewController.translateCurrentArticle()
 	}
 
+	func setTranslationDisplayMode(_ mode: TranslationDisplayMode) {
+		currentWebViewController.setTranslationDisplayMode(mode)
+	}
+
 	func canScrollDown() async -> Bool {
 		await currentWebViewController.canScrollDown()
 	}
