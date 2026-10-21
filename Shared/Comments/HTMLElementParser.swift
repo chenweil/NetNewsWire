@@ -24,9 +24,6 @@ final class HTMLElement {
 	/// The element's children, in document order.
 	fileprivate(set) var children: [HTMLElement] = []
 
-	/// The element's parent, when it has one.
-	weak var parent: HTMLElement?
-
 	/// The raw HTML between the start and end tags.
 	fileprivate(set) var innerHTML: String = ""
 
@@ -278,7 +275,6 @@ enum HTMLElementParser {
 
 		func attach(_ element: HTMLElement) {
 			if let parent = stack.last {
-				element.parent = parent
 				parent.children.append(element)
 			} else {
 				roots.append(element)
@@ -322,7 +318,12 @@ enum HTMLElementParser {
 	}
 
 	private static func finish(_ element: HTMLElement, innerEnd: String.Index, outerEnd: String.Index, html: String) {
-		element.innerHTML = String(html[element.openTagEnd..<innerEnd])
-		element.outerHTML = String(html[element.openTagStart..<outerEnd])
+		// The indices come from a forgiving parse of third-party markup, so
+		// they can end up out of order. Never slice past the end of the
+		// document.
+		let safeInnerEnd = min(innerEnd, html.endIndex)
+		let safeOuterEnd = min(outerEnd, html.endIndex)
+		element.innerHTML = element.openTagEnd <= safeInnerEnd ? String(html[element.openTagEnd..<safeInnerEnd]) : ""
+		element.outerHTML = element.openTagStart <= safeOuterEnd ? String(html[element.openTagStart..<safeOuterEnd]) : ""
 	}
 }

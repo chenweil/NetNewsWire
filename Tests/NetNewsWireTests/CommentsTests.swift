@@ -14,8 +14,8 @@ import Testing
 /// provider can be exercised without touching the network.
 ///
 /// The table is shared by the whole test process and the tests run
-/// concurrently, so it is guarded by a lock and every test keys its
-/// responses by a URL of its own.
+/// concurrently, so it is guarded by a lock. Responses are registered by
+/// their exact URL, so a test can never pick up another test's response.
 final class StubURLProtocol: URLProtocol {
 
 	struct Response {
@@ -26,17 +26,17 @@ final class StubURLProtocol: URLProtocol {
 	private static let lock = NSLock()
 	nonisolated(unsafe) private static var responses: [String: Response] = [:]
 
-	/// Registers the response for any request whose URL contains `urlSubstring`.
-	static func setResponse(_ urlSubstring: String, statusCode: Int = 200, data: Data = Data()) {
+	/// Registers the response for a URL.
+	static func setResponse(_ url: URL, statusCode: Int = 200, data: Data = Data()) {
 		lock.lock()
 		defer { lock.unlock() }
-		responses[urlSubstring] = Response(statusCode: statusCode, data: data)
+		responses[url.absoluteString] = Response(statusCode: statusCode, data: data)
 	}
 
 	private static func response(for urlString: String) -> Response? {
 		lock.lock()
 		defer { lock.unlock() }
-		return responses.first { urlString.contains($0.key) }?.value
+		return responses[urlString]
 	}
 
 	/// A session that routes every request through `StubURLProtocol`.
@@ -182,7 +182,10 @@ struct CommentsTests {
           }
         ]
         """
-        StubURLProtocol.setResponse("topic_id=1249625", data: Data(json.utf8))
+        StubURLProtocol.setResponse(
+            try #require(V2EXCommentsProvider.repliesEndpoint(topicID: 1249625)),
+            data: Data(json.utf8)
+        )
 
         let provider = V2EXCommentsProvider(session: StubURLProtocol.makeSession())
         let url = try #require(URL(string: "https://www.v2ex.com/t/1249625"))
@@ -201,7 +204,10 @@ struct CommentsTests {
     @Test("V2EX provider falls back to parsing the topic page")
     func v2exFallsBackToTopicPage() async throws {
         // The JSON endpoint fails…
-        StubURLProtocol.setResponse("topic_id=777777", statusCode: 500)
+        StubURLProtocol.setResponse(
+            try #require(V2EXCommentsProvider.repliesEndpoint(topicID: 777777)),
+            statusCode: 500
+        )
 
         let pageHTML = """
         <html><body>
@@ -215,7 +221,10 @@ struct CommentsTests {
         </div>
         </body></html>
         """
-        StubURLProtocol.setResponse("v2ex.com/t/777777", data: Data(pageHTML.utf8))
+        StubURLProtocol.setResponse(
+            try #require(V2EXCommentsProvider.topicPageURL(topicID: 777777)),
+            data: Data(pageHTML.utf8)
+        )
 
         let provider = V2EXCommentsProvider(session: StubURLProtocol.makeSession())
         let url = try #require(URL(string: "https://www.v2ex.com/t/777777"))
@@ -230,13 +239,55 @@ struct CommentsTests {
 
     @Test("V2EX provider returns nothing when the topic has no replies")
     func v2exHandlesEmptyThread() async throws {
-        StubURLProtocol.setResponse("topic_id=999999", data: Data("[]".utf8))
+        StubURLProtocol.setResponse(
+            try #require(V2EXCommentsProvider.repliesEndpoint(topicID: 999999)),
+            data: Data("[]".utf8)
+        )
 
         let provider = V2EXCommentsProvider(session: StubURLProtocol.makeSession())
         let url = try #require(URL(string: "https://www.v2ex.com/t/999999"))
         let comments = try await provider.fetchComments(for: url)
 
         #expect(comments.isEmpty)
+    }
+
+    @Test("V2EX provider stays consistent when many threads fetch at once")
+    func v2exHandlesConcurrentFetches() async throws {
+        let json = """
+        [
+          {
+            "id": 18192581,
+            "created": 1792233452,
+            "content": "只需要 tun 模式的代理",
+            "content_rendered": "<p>只需要 tun 模式的代理</p>",
+            "member": { "username": "wangwaner", "url": "https://www.v2ex.com/u/wangwaner" }
+          }
+        ]
+        """
+        StubURLProtocol.setResponse(
+            try #require(V2EXCommentsProvider.repliesEndpoint(topicID: 555555)),
+            data: Data(json.utf8)
+        )
+
+        let url = try #require(URL(string: "https://www.v2ex.com/t/555555"))
+
+        let counts = await withTaskGroup(of: Int.self, returning: [Int].self) { group in
+            for _ in 0..<50 {
+                group.addTask {
+                    let provider = V2EXCommentsProvider(session: StubURLProtocol.makeSession())
+                    let comments = (try? await provider.fetchComments(for: url)) ?? []
+                    return comments.count
+                }
+            }
+            var counts: [Int] = []
+            for await count in group {
+                counts.append(count)
+            }
+            return counts
+        }
+
+        #expect(counts.count == 50)
+        #expect(counts.allSatisfy { $0 == 1 })
     }
 
     // MARK: - Service

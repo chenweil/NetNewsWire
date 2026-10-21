@@ -59,6 +59,21 @@ struct V2EXCommentsProvider: CommentsProvider {
 		return Int(components[index + 1])
 	}
 
+	/// The page that shows a topic and its replies.
+	static func topicPageURL(topicID: Int) -> URL? {
+		URL(string: "https://www.v2ex.com/t/\(topicID)")
+	}
+
+	/// The public endpoint that returns the replies of a topic.
+	static func repliesEndpoint(topicID: Int) -> URL? {
+		var components = URLComponents(string: "https://www.v2ex.com/api/replies/show.json")
+		components?.queryItems = [
+			URLQueryItem(name: "topic_id", value: String(topicID)),
+			URLQueryItem(name: "page", value: "1"),
+		]
+		return components?.url
+	}
+
 	// MARK: - JSON API
 
 	private struct Reply: Decodable {
@@ -76,12 +91,7 @@ struct V2EXCommentsProvider: CommentsProvider {
 	}
 
 	private func fetchRepliesFromAPI(topicID: Int) async -> [ArticleComment] {
-		var components = URLComponents(string: "https://www.v2ex.com/api/replies/show.json")
-		components?.queryItems = [
-			URLQueryItem(name: "topic_id", value: String(topicID)),
-			URLQueryItem(name: "page", value: "1"),
-		]
-		guard let endpoint = components?.url else { return [] }
+		guard let endpoint = Self.repliesEndpoint(topicID: topicID) else { return [] }
 
 		guard
 			let (data, response) = try? await session.data(from: endpoint),
@@ -116,7 +126,7 @@ struct V2EXCommentsProvider: CommentsProvider {
 
 	private func fetchRepliesFromTopicPage(topicID: Int) async -> [ArticleComment] {
 		guard
-			let url = URL(string: "https://www.v2ex.com/t/\(topicID)"),
+			let url = Self.topicPageURL(topicID: topicID),
 			let (data, response) = try? await session.data(from: url),
 			(response as? HTTPURLResponse)?.statusCode == 200,
 			let html = String(data: data, encoding: .utf8)
