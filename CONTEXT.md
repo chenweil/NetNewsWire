@@ -85,3 +85,17 @@ _Avoid_: Thread (a NetNewsWire term for a column of the timeline); Post.
 **Comment Body**
 : The HTML of a single comment, as published by the site, with scripts, inline event handlers, and `javascript:` URLs removed before it reaches the article view.
 _Avoid_: Comment text; Comment content.
+
+# About
+
+The panel that says who this build of the app is and where to find it. The panel names two different parties, and keeping them apart is the point: the project this app is based on, and the person who made this particular build.
+
+## Language
+
+**Version Author**
+: The person responsible for this build of the app, as named in the app bundle (`NNWVersionAuthor`) together with the web address that leads to their work (`NNWVersionAuthorURL`). The About window shows the version author in the copyright line, links their name to their address, and uses that address for the prominent link under the version number.
+_Avoid_: Developer; Owner; Maintainer (a role in the upstream project, not in this build).
+
+**Upstream Project**
+: The open-source project this app is based on, and the party whose copyright statement the license requires this build to keep. Its author is credited in the copyright line and in the credits list, and its website is the fallback link when the bundle names no version author.
+_Avoid_: Original author; Source project.

@@ -1,5 +1,58 @@
 # NetNewsWire Translation — Progress Log
 
+## 2026-10-21 — About 面板归属 + 评论模块崩溃加固
+
+### About 面板
+
+用户说明这是个人复刻魔改版本，About 面板的作者应当是他本人（along），
+并要展示他的 git 地址。
+
+- `Mac/Resources/Info.plist`：
+  - `NSHumanReadableCopyright` → `Copyright © 2002-2026 Brent Simmons. All rights reserved. This version © 2026 along.`
+  - 新增 `NNWVersionAuthor`（`along`）与 `NNWVersionAuthorURL`
+    （`https://github.com/chenweil/NetNewsWire`）
+- `Mac/About/AboutWindowController.swift`：
+  - 版权行里把 `along` 链到他的仓库地址（原上游作者的链接保留 —— MIT 许可
+    要求保留原版权声明）
+  - 原来那个醒目的 `netnewswire.com` 链接换成 `github.com/chenweil/NetNewsWire`
+  - 顺带修掉三处强制解包（`NSHumanReadableCopyright` 取值、`inessential.com`、
+    `netnewswire.com`）
+- `Mac/Resources/Credits.rtf`：致谢列表最前面加一条「This Version → along」，
+  带仓库链接
+- 版本 7.2.1 → **7.2.2**（build 7110 → 7111），发行说明补 7.2.2
+
+### 评论模块的崩溃加固
+
+用户发来两份测试宿主崩溃日志（14:17 / 14:18，本轮改动之前的版本）：
+
+| 时间 | 现象 |
+|---|---|
+| 14:17 | `EXC_BREAKPOINT`，`Array.subscript.getter` 越界（`Array._checkSubscript`） |
+| 14:18 | `EXC_CRASH` SIGABRT，`-[__NSCFNumber count]: unrecognized selector` |
+
+两个都是**野指针特征**（读到了已释放/被写坏的对象），不是普通断言失败。
+排查后按「能确定的问题直接修」处理：
+
+1. **`HTMLElement.parent` 是只写不读的死代码，而且是个 `weak` 引用** ——
+   弱引用正是这类野指针的经典来源。直接删掉（`attach()` 里那一行赋值也没了）
+2. **解析器的字符串切片没有边界保护** —— `finish()` 里
+   `html[element.openTagEnd..<innerEnd]`，遇到乱序索引会直接越界。
+   改成先夹紧索引再切片
+3. **测试桩的响应表是全局共享的，且用「首个 URL 包含即命中」的模糊匹配** ——
+   并行测试之间可能互相串台。改成**按完整 URL 精确匹配**，
+   并让 provider 暴露 `repliesEndpoint(topicID:)` / `topicPageURL(topicID:)`
+   两个 URL 构造器，测试直接用同一套构造，不会因为 provider 改 URL 而失配
+4. **补了一个并发护栏测试**：50 个 task 同时打同一个 topic，断言结果一致
+
+### 验证
+
+- 复现尝试：独立程序把三种 topic（JSON 路径 / HTML 回退 / 空回复）并发跑 400 轮，
+  **未复现**；加固后完整套件连跑两次均 `** TEST SUCCEEDED **`
+- 诚实说明：**崩溃的精确触发条件没有定位到**。已排除的假设：解析器状态共享
+  （解析器无共享可变状态）、响应表串台（每个 topic 用唯一 ID + 现在精确匹配）、
+  简单的并发写竞争（400 轮并发未复现）。已修掉的是**能确认存在的弱引用与
+  越界风险**，其余按「测试层问题、不阻塞进度」处理
+
 ## 2026-10-21 — 评论线程版式重做
 
 ### 问题

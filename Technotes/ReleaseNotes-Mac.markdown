@@ -1,5 +1,9 @@
 # Mac Release Notes
 
+### 7.2.2 21 October 2026
+
+Changed the About window to name the author of this version — along — and to link to the project's GitHub repository instead of the upstream website
+
 ### 7.2.1 21 October 2026
 
 Redesigned the comment thread — comments now read like a transcript: the author's picture, name and time sit on one line, a numbered gutter shows each comment's place in the thread, and replies are indented under a hairline

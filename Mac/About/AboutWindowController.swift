@@ -21,9 +21,47 @@ final class AboutWindowController: NSWindowController {
 		configureWindow()
 		updateUI()
 	}
+
+	/// A short, human-facing form of a URL, for showing in the About window.
+	nonisolated static func displayText(for url: URL) -> String {
+		var text = url.absoluteString
+		for scheme in ["https://", "http://"] where text.hasPrefix(scheme) {
+			text.removeFirst(scheme.count)
+			break
+		}
+		if text.hasPrefix("www.") {
+			text.removeFirst("www.".count)
+		}
+		return text
+	}
 }
 
 private extension AboutWindowController {
+
+	/// The person responsible for this build of the app, and where to find them.
+	struct VersionAuthor {
+		let name: String
+		let url: URL
+	}
+
+	/// The website of the project this app is based on.
+	static let upstreamURL = URL(string: "https://netnewswire.com/")
+
+	/// The author of this version, as configured in the app bundle.
+	///
+	/// A build that does not name an author falls back to the upstream project.
+	static var versionAuthor: VersionAuthor? {
+		guard
+			let name = Bundle.main.infoDictionary?["NNWVersionAuthor"] as? String,
+			!name.isEmpty,
+			let urlString = Bundle.main.infoDictionary?["NNWVersionAuthorURL"] as? String,
+			let url = URL(string: urlString)
+		else {
+			return nil
+		}
+		return VersionAuthor(name: name, url: url)
+	}
+
 	func configureWindow() {
 		window?.isOpaque = false
 		window?.backgroundColor = .clear
@@ -60,7 +98,7 @@ private extension AboutWindowController {
 		versionLabel.stringValue = versionString
 
 		// Copyright
-		let copyrightText = Bundle.main.infoDictionary!["NSHumanReadableCopyright"] as! String
+		let copyrightText = Bundle.main.infoDictionary?["NSHumanReadableCopyright"] as? String ?? ""
 		let copyrightAttributedString = NSMutableAttributedString(string: copyrightText)
 		let copyrightFullRange = NSRange(location: 0, length: copyrightAttributedString.length)
 
@@ -70,10 +108,19 @@ private extension AboutWindowController {
 		copyrightAttributedString.addAttribute(.foregroundColor, value: NSColor.secondaryLabelColor, range: copyrightFullRange)
 		copyrightAttributedString.addAttribute(.font, value: NSFont.preferredFont(forTextStyle: .subheadline), range: copyrightFullRange)
 
-		if let nameRange = copyrightText.range(of: "Brent Simmons") {
+		// The upstream author of the project this app is based on.
+		if let nameRange = copyrightText.range(of: "Brent Simmons"),
+		   let url = URL(string: "https://inessential.com/") {
 			let nsRange = NSRange(nameRange, in: copyrightText)
-			let url = URL(string: "https://inessential.com/")!
 			copyrightAttributedString.addAttribute(.link, value: url, range: nsRange)
+		}
+
+		// The author of this version. Their name is the last thing in the
+		// copyright line, so look for it from the back.
+		if let author = Self.versionAuthor,
+		   let nameRange = copyrightText.range(of: author.name, options: .backwards) {
+			let nsRange = NSRange(nameRange, in: copyrightText)
+			copyrightAttributedString.addAttribute(.link, value: author.url, range: nsRange)
 		}
 
 		copyrightLabel.textStorage?.setAttributedString(copyrightAttributedString)
@@ -93,11 +140,12 @@ private extension AboutWindowController {
 		creditsTextView.textStorage?.addAttribute(.paragraphStyle, value: leadingParagraphStyle, range: fullRange)
 
 		// URL
-		let url = URL(string: "https://netnewswire.com/")!
-		let attributedString = NSMutableAttributedString(string: "netnewswire.com")
-		attributedString.addAttribute(.link, value: url, range: NSRange(location: 0, length: attributedString.length))
-		attributedString.addAttribute(.foregroundColor, value: NSColor.systemBlue, range: NSRange(location: 0, length: attributedString.length))
-		attributedString.addAttribute(.underlineStyle, value: NSUnderlineStyle.single.rawValue, range: NSRange(location: 0, length: attributedString.length))
-		websiteLabel.attributedStringValue = attributedString
+		if let websiteURL = Self.versionAuthor?.url ?? Self.upstreamURL {
+			let attributedString = NSMutableAttributedString(string: Self.displayText(for: websiteURL))
+			attributedString.addAttribute(.link, value: websiteURL, range: NSRange(location: 0, length: attributedString.length))
+			attributedString.addAttribute(.foregroundColor, value: NSColor.systemBlue, range: NSRange(location: 0, length: attributedString.length))
+			attributedString.addAttribute(.underlineStyle, value: NSUnderlineStyle.single.rawValue, range: NSRange(location: 0, length: attributedString.length))
+			websiteLabel.attributedStringValue = attributedString
+		}
 	}
 }
