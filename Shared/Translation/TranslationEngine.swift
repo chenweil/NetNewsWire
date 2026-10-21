@@ -146,4 +146,10 @@ public enum TranslationStatus: Sendable, Equatable {
 	/// Streaming produced visible content before the request failed. The
 	/// partial body is intentionally kept out of the translation cache.
 	case streamingFailed(String, partialBody: String)
+	/// Translation was not attempted, and the article view says why.
+	///
+	/// Without this the reader sees an article with no translation and no
+	/// explanation — and the display-mode control looks broken, because there
+	/// is no translation for it to switch between.
+	case skipped(SkipReason)
 }

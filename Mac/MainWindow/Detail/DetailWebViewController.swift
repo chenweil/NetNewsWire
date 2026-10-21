@@ -36,10 +36,21 @@ final class DetailWebViewController: NSViewController {
 			if case .translating = translationStatus {
 				streamedTranslationBody = ""
 			}
+			notifyTranslationAvailabilityChanged()
 			guard isViewLoaded else { return }
+			// The reset between articles is rendered by the article change
+			// itself, so it must not trigger a second render.
+			guard !isResettingTranslationStatus else { return }
+			// Re-render only when the status actually changed: the article
+			// view is re-rendered on every article change already.
+			guard translationStatus != oldValue else { return }
 			reloadHTMLMaintainingScrollPosition()
 		}
 	}
+
+	/// Called whenever the article view gains or loses a translation, so the
+	/// display-mode control can be enabled or disabled to match.
+	var onTranslationAvailabilityChanged: ((Bool) -> Void)?
 
 	// MARK: - Initialization
 
@@ -56,11 +67,18 @@ final class DetailWebViewController: NSViewController {
 
 	deinit {
 		translationTask?.cancel()
+		skipCheckTask?.cancel()
 	}
 
 	var state: DetailState = .noSelection {
 		didSet {
 			if state != oldValue {
+				// Drop the previous article's translation before the new
+				// article is rendered, so it never shows up under the new
+				// article's body.
+				isResettingTranslationStatus = true
+				translationStatus = .idle
+				isResettingTranslationStatus = false
 				switch state {
 				case .article(_, let scrollY), .extracted(_, _, let scrollY):
 					windowScrollY = scrollY
@@ -109,7 +127,16 @@ final class DetailWebViewController: NSViewController {
 	private let keyboardDelegate = DetailKeyboardDelegate()
 	private var windowScrollY: CGFloat?
 	private var translationTask: Task<Void, Never>?
+	private var skipCheckTask: Task<Void, Never>?
 	private var streamedTranslationBody = ""
+
+	/// Set while the translation status is being reset between articles, so
+	/// the reset does not trigger a render of its own.
+	private var isResettingTranslationStatus = false
+
+	/// Counts the reloads that have been requested, so that only the most
+	/// recent one renders.
+	private var reloadToken = 0
 
 	private var isShowingExtractedArticle: Bool {
 		switch state {
@@ -214,14 +241,36 @@ final class DetailWebViewController: NSViewController {
 	}
 
 	/// Switches how a translated article's body is displayed (issue #9). The
-	/// mode is persisted; the web view is updated via the JS bridge without
-	/// re-fetching or re-rendering the article.
+	/// mode is persisted and applied to the article view.
+	///
+	/// The rendered HTML always carries the current mode, so re-rendering
+	/// always produces the right result. When the page is already showing a
+	/// translation, the page is updated in place instead: that is instant and
+	/// it does not replay the typewriter reveal. When the page cannot update
+	/// itself — article JavaScript is off, or the page has not finished
+	/// loading — the article is re-rendered instead.
 	func setTranslationDisplayMode(_ mode: TranslationDisplayMode) {
 		TranslationSettings.shared.displayMode = mode
 		guard isViewLoaded else {
 			return
 		}
-		webView.evaluateJavaScript("window.setTranslationDisplayMode('\(mode.rawValue)');")
+		webView.evaluateJavaScript("window.setTranslationDisplayMode('\(mode.rawValue)');") { [weak self] result, _ in
+			guard (result as? Bool) != true else {
+				return
+			}
+			Task { @MainActor in
+				self?.reloadHTMLMaintainingScrollPosition()
+			}
+		}
+	}
+
+	/// Whether the article view currently has a translation the display-mode
+	/// control can act on.
+	var hasTranslation: Bool {
+		if case .translated = translationStatus {
+			return true
+		}
+		return false
 	}
 
 	// MARK: Scrolling
@@ -351,7 +400,15 @@ private extension DetailWebViewController {
 	}
 
 	func reloadHTMLMaintainingScrollPosition() {
+		// Several reloads can be in flight at once — the scroll position is
+		// fetched asynchronously. Only the most recent one may render, or an
+		// older request can land last and show stale content.
+		reloadToken += 1
+		let token = reloadToken
 		fetchScrollInfo { scrollInfo in
+			guard token == self.reloadToken else {
+				return
+			}
 			self.windowScrollY = scrollInfo?.offsetY
 			self.reloadHTML()
 		}
@@ -413,6 +470,11 @@ private extension DetailWebViewController {
 			\(articleHTML)
 			"""
 		case .translated(let translation):
+			let displayMode = TranslationSettings.shared.displayMode
+			let showOriginal = displayMode == .bilingual || displayMode == .original
+			let showTranslated = displayMode == .bilingual || displayMode == .translation
+			let originalHidden = showOriginal ? "" : " hidden"
+			let translatedHidden = showTranslated ? "" : " hidden"
 			let titleHTML: String
 			if translation.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
 				titleHTML = ""
@@ -425,9 +487,9 @@ private extension DetailWebViewController {
 			<div class="translationStatus">\(NSLocalizedString("Translated", comment: "Translation status"))</div>
 			<article data-translation-display>
 			\(titleHTML)
-			<div class="articleBody" data-translation-mode-content="original">\(currentBodyInfo.html)</div>
-			<hr class="translationSeparator" data-translation-separator>
-			<div class="translatedArticleBody articleBody" data-translation-mode-content="translation" data-translation-typewriter>\(translation.body)</div>
+			<div class="articleBody" data-translation-mode-content="original"\(originalHidden)>\(currentBodyInfo.html)</div>
+			<hr class="translationSeparator" data-translation-separator\(showOriginal && showTranslated ? "" : " hidden")>
+			<div class="translatedArticleBody articleBody" data-translation-mode-content="translation" data-translation-typewriter\(translatedHidden)>\(translation.body)</div>
 			\(translationTypewriterScript)
 			\(translationDisplayModeScript)
 			</article>
@@ -435,6 +497,18 @@ private extension DetailWebViewController {
 		case .failed(let message):
 			return """
 			<div class="translationStatus">\(NSLocalizedString("Translation Failed", comment: "Translation status")): \(message.escapedHTML)</div>
+			\(articleHTML)
+			"""
+		case .skipped(let reason):
+			let message: String
+			switch reason {
+			case .disabled:
+				message = NSLocalizedString("Translation is off. Turn it on in Preferences → Translation.", comment: "Translation status")
+			case .sourceMatchesTarget:
+				message = NSLocalizedString("This article is already in your target language — nothing to translate.", comment: "Translation status")
+			}
+			return """
+			<div class="translationStatus">\(message)</div>
 			\(articleHTML)
 			"""
 		case .streamingFailed(let message, let partialBody):
@@ -703,10 +777,7 @@ private extension DetailWebViewController {
 		/// as it only needs the article data, not the web view.
 		func requestTranslationIfNeeded() {
 			cancelTranslationTask()
-
-			guard let coordinator = translationCoordinator else {
-				return
-			}
+			skipCheckTask?.cancel()
 
 			guard let article = article else {
 				translationStatus = .idle
@@ -715,10 +786,18 @@ private extension DetailWebViewController {
 
 			// Determine body source and content.
 			let (bodyHTML, bodySource) = currentBodyInfo
+			let title = article.title ?? ""
+
+			guard let coordinator = translationCoordinator else {
+				// The reader has not asked for a translation yet. Work out
+				// locally whether a translation would be skipped, so the
+				// display-mode control is not left looking broken.
+				updateLocalSkipStatus(for: title, bodyHTML: bodyHTML)
+				return
+			}
 
 			translationStatus = .translating
 			let articleID = article.articleID
-			let title = article.title ?? ""
 			translationTask = Task { [weak self] in
 				let result = await coordinator.streamingTranslation(
 					for: articleID,
@@ -746,9 +825,43 @@ private extension DetailWebViewController {
 							partialBody: self.streamedTranslationBody
 						)
 					}
-				case .skipped:
-					self.translationStatus = .idle
+				case .skipped(let reason):
+					self.translationStatus = .skipped(reason)
 				}
+			}
+		}
+
+		/// Works out, locally, whether a translation would be skipped for this
+		/// article and reports it.
+		///
+		/// This mirrors the skip rule the coordinator applies when it does
+		/// translate, but it runs before any coordinator exists — the reader
+		/// has not asked for a translation yet — and it does no cache lookup,
+		/// no network request and no engine call.
+		///
+		/// The language detection loads a language model, so it runs off the
+		/// main thread. The result only replaces an `.idle` status: a
+		/// translation that started in the meantime wins.
+		func updateLocalSkipStatus(for title: String, bodyHTML: String) {
+			translationStatus = .idle
+			skipCheckTask = Task { [weak self] in
+				let status = await Task.detached(priority: .userInitiated) { () -> TranslationStatus? in
+					guard TranslationSettings.shared.isEnabled else {
+						return .skipped(.disabled)
+					}
+					guard TranslationSettings.shared.skipWhenSourceMatchesTarget else {
+						return nil
+					}
+					let matches = SourceLanguageInspector.live().sourceMatchesTarget(
+						title: title,
+						bodyHTML: bodyHTML,
+						targetLanguage: TranslationSettings.shared.targetLanguage
+					)
+					return matches ? .skipped(.sourceMatchesTarget) : nil
+				}.value
+				guard let self, !Task.isCancelled, let status else { return }
+				guard self.translationStatus == .idle else { return }
+				self.translationStatus = status
 			}
 		}
 
@@ -797,10 +910,16 @@ private extension DetailWebViewController {
 							partialBody: self.streamedTranslationBody
 						)
 					}
-				case .skipped:
-					self.translationStatus = .idle
+				case .skipped(let reason):
+					self.translationStatus = .skipped(reason)
 				}
 			}
+		}
+
+		/// Tells the rest of the UI whether the display-mode control has
+		/// something to act on.
+		func notifyTranslationAvailabilityChanged() {
+			onTranslationAvailabilityChanged?(hasTranslation)
 		}
 }
 

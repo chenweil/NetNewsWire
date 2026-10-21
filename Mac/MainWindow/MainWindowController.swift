@@ -61,6 +61,7 @@ final class MainWindowController: NSWindowController, NSUserInterfaceValidations
 	}
 	private var searchSmartFeed: SmartFeed?
 	private var restoreArticleWindowScrollY: CGFloat?
+	private var translationDisplayModeControl: NSSegmentedControl?
 
 	// MARK: - NSWindowController
 
@@ -103,6 +104,9 @@ final class MainWindowController: NSWindowController, NSUserInterfaceValidations
 		}
 
 		detailViewController = splitViewController?.splitViewItems[2].viewController as? DetailViewController
+		detailViewController?.onTranslationAvailabilityChanged = { [weak self] isAvailable in
+			self?.updateTranslationDisplayModeAvailability(isAvailable)
+		}
 
 		if #unavailable(macOS 26.0) {
 			splitViewController?.splitViewItems[2].titlebarSeparatorStyle = .line
@@ -485,6 +489,22 @@ final class MainWindowController: NSWindowController, NSUserInterfaceValidations
 			return
 		}
 		detailViewController?.setTranslationDisplayMode(TranslationDisplayMode.allCases[selectedIndex])
+	}
+
+	/// Enables or disables the translation display-mode control.
+	///
+	/// The control switches between the original and the translated body, so
+	/// it only has something to do when the article actually has a
+	/// translation. Leaving it enabled when there is none makes it look
+	/// broken: the reader clicks it and nothing happens.
+	func updateTranslationDisplayModeAvailability(_ isAvailable: Bool) {
+		guard let control = translationDisplayModeControl else { return }
+		control.isEnabled = isAvailable
+		if isAvailable {
+			control.toolTip = NSLocalizedString("Translation Display Mode", comment: "Translation display mode")
+		} else {
+			control.toolTip = NSLocalizedString("This article has no translation", comment: "Translation display mode unavailable")
+		}
 	}
 
 	@IBAction func markAllAsReadAndGoToNextUnread(_ sender: Any?) {
@@ -896,6 +916,7 @@ extension MainWindowController: NSToolbarDelegate {
 			if let index = TranslationDisplayMode.allCases.firstIndex(of: TranslationSettings.shared.displayMode) {
 				control.selectedSegment = index
 			}
+			translationDisplayModeControl = control
 			let toolbarItem = RSToolbarItem(itemIdentifier: .translationDisplayMode)
 			toolbarItem.autovalidates = true
 			toolbarItem.view = control

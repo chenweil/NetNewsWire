@@ -37,6 +37,10 @@ final class TranslationPreferencesViewController: NSViewController {
 	private let engineLabel = NSTextField(labelWithString: "")
 	private let engineSegmentedControl = NSSegmentedControl()
 
+	// Display mode section
+	private let displayModeLabel = NSTextField(labelWithString: "")
+	private let displayModePopup = NSPopUpButton()
+
 	// Skip when source matches target
 	private let skipCheckbox = NSButton(checkboxWithTitle: "", target: nil, action: nil)
 
@@ -107,6 +111,17 @@ final class TranslationPreferencesViewController: NSViewController {
 		updateUI()
 	}
 
+	@objc func displayModeChanged(_ sender: NSPopUpButton) {
+		guard !isUpdatingUI else { return }
+		guard
+			let raw = sender.selectedItem?.representedObject as? String,
+			let mode = TranslationDisplayMode(rawValue: raw)
+		else {
+			return
+		}
+		TranslationSettings.shared.displayMode = mode
+	}
+
 	@objc func skipCheckboxChanged(_ sender: NSButton) {
 		guard !isUpdatingUI else { return }
 		UserDefaults.standard.set(sender.state == .on, forKey: "translation.skipWhenSourceMatchesTarget")
@@ -168,6 +183,7 @@ private extension TranslationPreferencesViewController {
 		setupEnableSection()
 		setupTargetLanguageSection()
 		setupEngineSection()
+		setupDisplayModeSection()
 		setupSkipSection()
 		setupOpenAISection()
 
@@ -234,6 +250,20 @@ private extension TranslationPreferencesViewController {
 
 		contentView.addSubview(engineLabel)
 		contentView.addSubview(engineSegmentedControl)
+	}
+
+	func setupDisplayModeSection() {
+		displayModeLabel.stringValue = "Display Mode:"
+		displayModeLabel.alignment = .right
+		displayModeLabel.translatesAutoresizingMaskIntoConstraints = false
+
+		displayModePopup.target = self
+		displayModePopup.action = #selector(displayModeChanged(_:))
+		displayModePopup.translatesAutoresizingMaskIntoConstraints = false
+		populateDisplayModes()
+
+		contentView.addSubview(displayModeLabel)
+		contentView.addSubview(displayModePopup)
 	}
 
 	func setupSkipSection() {
@@ -303,6 +333,23 @@ private extension TranslationPreferencesViewController {
 		contentView.addSubview(openAIBox)
 	}
 
+	func populateDisplayModes() {
+		let menu = displayModePopup.menu!
+		menu.removeAllItems()
+
+		let modes: [(String, TranslationDisplayMode)] = [
+			("Translation only", .translation),
+			("Bilingual (original and translation)", .bilingual),
+			("Original only", .original),
+		]
+
+		for (name, mode) in modes {
+			let item = NSMenuItem(title: name, action: nil, keyEquivalent: "")
+			item.representedObject = mode.rawValue
+			menu.addItem(item)
+		}
+	}
+
 	func populateTargetLanguages() {
 		let menu = targetLanguagePopup.menu!
 		menu.removeAllItems()
@@ -364,9 +411,20 @@ private extension TranslationPreferencesViewController {
 			engineSegmentedControl.leadingAnchor.constraint(equalTo: engineLabel.trailingAnchor, constant: fieldSpacing),
 		])
 
+		// Display mode
+		NSLayoutConstraint.activate([
+			displayModeLabel.topAnchor.constraint(equalTo: engineLabel.bottomAnchor, constant: padding),
+			displayModeLabel.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: padding),
+			displayModeLabel.widthAnchor.constraint(equalToConstant: labelWidth),
+
+			displayModePopup.centerYAnchor.constraint(equalTo: displayModeLabel.centerYAnchor),
+			displayModePopup.leadingAnchor.constraint(equalTo: displayModeLabel.trailingAnchor, constant: fieldSpacing),
+			displayModePopup.trailingAnchor.constraint(lessThanOrEqualTo: contentView.trailingAnchor, constant: -padding),
+		])
+
 		// Skip checkbox
 		NSLayoutConstraint.activate([
-			skipCheckbox.topAnchor.constraint(equalTo: engineLabel.bottomAnchor, constant: padding),
+			skipCheckbox.topAnchor.constraint(equalTo: displayModeLabel.bottomAnchor, constant: padding),
 			skipCheckbox.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: padding),
 			skipCheckbox.trailingAnchor.constraint(lessThanOrEqualTo: contentView.trailingAnchor, constant: -padding),
 		])
@@ -454,6 +512,15 @@ private extension TranslationPreferencesViewController {
 		// Engine
 		let engine = defaults.string(forKey: "translation.engine") ?? "apple"
 		engineSegmentedControl.selectedSegment = (engine == "openai_compatible") ? 1 : 0
+
+		// Display mode
+		let displayMode = TranslationSettings.shared.displayMode.rawValue
+		for item in displayModePopup.menu?.items ?? [] {
+			if item.representedObject as? String == displayMode {
+				displayModePopup.select(item)
+				break
+			}
+		}
 
 		// Skip checkbox
 		if defaults.object(forKey: "translation.skipWhenSourceMatchesTarget") == nil {

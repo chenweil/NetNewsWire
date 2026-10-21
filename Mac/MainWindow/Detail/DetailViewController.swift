@@ -63,6 +63,10 @@ final class DetailViewController: NSViewController, WKUIDelegate {
 
 	private var isArticleContentJavascriptEnabled = AppDefaults.shared.isArticleContentJavascriptEnabled
 
+	/// Called when the article view gains or loses a translation, so the
+	/// display-mode control can be enabled or disabled to match.
+	var onTranslationAvailabilityChanged: ((Bool) -> Void)?
+
 	override func viewDidLoad() {
 		currentWebViewController = regularWebViewController
 		NotificationCenter.default.addObserver(forName: UserDefaults.didChangeNotification, object: nil, queue: .main) { [weak self] _ in
@@ -152,6 +156,9 @@ private extension DetailViewController {
 		let controller = DetailWebViewController()
 		controller.delegate = self
 		controller.state = .noSelection
+		controller.onTranslationAvailabilityChanged = { [weak self] isAvailable in
+			self?.onTranslationAvailabilityChanged?(isAvailable)
+		}
 		return controller
 	}
 

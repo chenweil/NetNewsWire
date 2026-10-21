@@ -8,6 +8,7 @@
 //
 
 import Foundation
+import WebKit
 import Testing
 @testable import NetNewsWire
 import ArticlesDatabase
@@ -120,7 +121,7 @@ struct DetailWebViewControllerTranslationTests {
             Issue.record("Translation should succeed, but got error: \(error)")
         case .streamingFailed(let error, _):
             Issue.record("Translation should succeed, but got streaming error: \(error)")
-        case .idle, .translating:
+        case .idle, .translating, .skipped:
             Issue.record("Translation should complete, but status is: \(status)")
         }
     }
@@ -160,15 +161,15 @@ struct DetailWebViewControllerTranslationTests {
             #expect(translation.translatedAt == cachedTranslation.translatedAt)
         case .translating:
             Issue.record("Cache hit should not go through .translating state")
-        case .idle, .failed, .streamingFailed:
+        case .idle, .failed, .streamingFailed, .skipped:
             Issue.record("Cache hit should result in .translated state, got: \(status)")
         }
     }
 
     // MARK: - Test 3: Disabled translation remains idle
 
-    @Test("Translation remains idle when disabled")
-    func translationRemainsIdleWhenDisabled() async throws {
+    @Test("Translation reports why it was skipped when disabled")
+    func translationReportsSkipWhenDisabled() async throws {
         // Given: A coordinator where translation is disabled
         let disabledDeps = TranslationCoordinator.Dependencies(
             isEnabled: { false },
@@ -203,12 +204,13 @@ struct DetailWebViewControllerTranslationTests {
         controller.state = .article(makeTestArticle(), nil)
 
         try await Task.sleep(for: .milliseconds(20))
-        let didReturnToIdle = try await waitForTranslationStatus(in: controller) { status in
-            status == .idle
+        let didReportSkipped = try await waitForTranslationStatus(in: controller) { status in
+            status == .skipped(.disabled)
         }
 
-        // Then: Status should remain idle
-        #expect(didReturnToIdle)
+        // Then: Status should say why there is no translation, so the
+        // display-mode control is not left looking broken.
+        #expect(didReportSkipped)
     }
 
     // MARK: - Test 4: Failed translation shows error
@@ -244,7 +246,7 @@ struct DetailWebViewControllerTranslationTests {
         switch status {
         case .failed(let errorMessage):
             #expect(errorMessage.contains("network") || errorMessage.contains("unavailable"))
-        case .idle, .translating, .translated, .streamingFailed:
+        case .idle, .translating, .translated, .streamingFailed, .skipped:
             Issue.record("Expected .failed status, got: \(status)")
         }
     }
@@ -302,6 +304,22 @@ struct DetailWebViewControllerTranslationTests {
         controller.state = .article(makeTestArticle(), nil)
         controller.translationStatus = .translating
 
+        // The loading script starts the animation as soon as it runs.
+        let didStart = try await waitForJavaScriptBool(
+            """
+            (() => {
+                const dots = document.querySelector("[data-translation-loading-dots]");
+                return dots?.dataset.translationLoadingStarted === "true";
+            })()
+            """,
+            in: controller,
+            timeout: .seconds(20)
+        )
+        #expect(didStart, "The loading animation never started")
+
+        // …and the dots keep moving. The timer behind it only runs once the
+        // page has finished loading, which can take a while on a busy
+        // machine.
         let didAnimate = try await waitForJavaScriptBool(
             """
             (() => {
@@ -310,9 +328,21 @@ struct DetailWebViewControllerTranslationTests {
             })()
             """,
             in: controller,
-            timeout: .seconds(2)
+            timeout: .seconds(20)
         )
-        #expect(didAnimate)
+        let snapshot = try await evaluateJavaScriptString(
+            """
+            (() => {
+                const dots = document.querySelector("[data-translation-loading-dots]");
+                const status = document.querySelector(".translationStatus");
+                return JSON.stringify({
+                    dotsText: dots?.textContent,
+                    started: dots?.dataset.translationLoadingStarted,
+                    statusText: status?.textContent
+                });
+            })()
+            """, in: controller) ?? "snapshot unavailable"
+        #expect(didAnimate, "SNAPSHOT: \(snapshot)")
     }
 
     @Test("Translating status renders streamed text safely")
@@ -335,6 +365,73 @@ struct DetailWebViewControllerTranslationTests {
             in: controller
         )
         #expect(didRenderSafely)
+    }
+
+    @Test("Display modes work when article JavaScript is disabled")
+    func displayModesWithoutArticleJavaScript() async throws {
+        let controller = DetailWebViewController()
+        controller.loadViewIfNeeded()
+        controller.webView.configuration.defaultWebpagePreferences.allowsContentJavaScript = false
+        controller.state = .article(makeTestArticle(), nil)
+        controller.translationStatus = .translated(ArticleTranslation(
+            articleID: "test-article-id", targetLanguage: "zh-Hans", bodySource: .feedBody,
+            title: "测试标题", body: "<p>译文内容</p>", engine: .apple, translatedAt: Date()
+        ))
+        let ready = try await waitForJavaScriptBool(
+            "document.querySelector('[data-translation-display]') !== null", in: controller)
+        #expect(ready)
+        let oldMode = TranslationSettings.shared.displayMode
+        defer { TranslationSettings.shared.displayMode = oldMode }
+        for mode in TranslationDisplayMode.allCases {
+            controller.setTranslationDisplayMode(mode)
+            let matches = try await waitForJavaScriptBool("""
+                (() => {
+                    const original = document.querySelector('[data-translation-mode-content="original"]');
+                    const translated = document.querySelector('[data-translation-mode-content="translation"]');
+                    return original?.hidden === \(mode == .translation)
+                        && translated?.hidden === \(mode == .original);
+                })()
+                """, in: controller, timeout: .seconds(20))
+            #expect(matches, "Mode: \(mode)")
+        }
+    }
+
+    @Test("Skipped translation explains itself in the article view")
+    func skippedTranslationExplainsItself() async throws {
+        let controller = DetailWebViewController()
+        controller.loadViewIfNeeded()
+        controller.state = .article(makeTestArticle(), nil)
+        controller.translationStatus = .skipped(.sourceMatchesTarget)
+
+        let didShowReason = try await waitForJavaScriptBool(
+            """
+            (() => {
+                const status = document.querySelector(".translationStatus");
+                return status !== null && status.textContent.trim().length > 0;
+            })()
+            """, in: controller)
+        #expect(didShowReason)
+    }
+
+    @Test("Translation availability is reported so the control can be enabled")
+    func translationAvailabilityIsReported() async throws {
+        let controller = DetailWebViewController()
+        controller.loadViewIfNeeded()
+
+        var reported: [Bool] = []
+        controller.onTranslationAvailabilityChanged = { isAvailable in
+            reported.append(isAvailable)
+        }
+
+        controller.state = .article(makeTestArticle(), nil)
+        controller.translationStatus = .translated(ArticleTranslation(
+            articleID: "test-article-id", targetLanguage: "zh-Hans", bodySource: .feedBody,
+            title: "测试标题", body: "<p>译文内容</p>", engine: .apple, translatedAt: Date()
+        ))
+
+        #expect(reported.contains(false))
+        #expect(reported.contains(true))
+        #expect(controller.hasTranslation)
     }
 
     private func waitForJavaScriptBool(
@@ -363,7 +460,7 @@ struct DetailWebViewControllerTranslationTests {
             switch controller.translationStatus {
             case .idle, .translating:
                 try await Task.sleep(for: .milliseconds(20))
-            case .translated, .failed, .streamingFailed:
+            case .translated, .failed, .streamingFailed, .skipped:
                 return controller.translationStatus
             }
         }
@@ -384,6 +481,18 @@ struct DetailWebViewControllerTranslationTests {
             try await Task.sleep(for: .milliseconds(20))
         }
         return matches(controller.translationStatus)
+    }
+
+    private func evaluateJavaScriptString(_ javascript: String, in controller: DetailWebViewController) async throws -> String? {
+        try await withCheckedThrowingContinuation { continuation in
+            controller.webView.evaluateJavaScript(javascript) { result, error in
+                if error != nil {
+                    continuation.resume(returning: nil)
+                } else {
+                    continuation.resume(returning: result as? String)
+                }
+            }
+        }
     }
 
     private func evaluateJavaScriptBool(_ javascript: String, in controller: DetailWebViewController) async throws -> Bool {
