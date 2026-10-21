@@ -1,5 +1,9 @@
 # Mac Release Notes
 
+### 7.2.3 21 October 2026
+
+Fixed the About window, whose copyright line was cut off once it named the author of this version
+
 ### 7.2.2 21 October 2026
 
 Changed the About window to name the author of this version — along — and to link to the project's GitHub repository instead of the upstream website
