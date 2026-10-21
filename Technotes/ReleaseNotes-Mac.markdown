@@ -1,5 +1,17 @@
 # Mac Release Notes
 
+### 7.2.1 21 October 2026
+
+Redesigned the comment thread — comments now read like a transcript: the author's picture, name and time sit on one line, a numbered gutter shows each comment's place in the thread, and replies are indented under a hairline
+Fixed the X-Large and XX-Large article text sizes not being applied
+
+### 7.2.0 21 October 2026
+
+Added article comments — for V2EX topics, the replies are now shown below the article, which previously showed only the first post from the feed
+Fixed the translation display-mode control (Translation / Bilingual / Original) doing nothing when the open article had no translation — the article view now says why there is no translation, and the control is disabled instead of silently doing nothing
+Fixed the translation display-mode control not working when article JavaScript is turned off
+Added the translation display mode to Preferences → Translation, so it can be set when the open article has no translation
+
 ### 7.1.2 8 October 2026
 
 Added article translation (Mac) — open an article and NetNewsWire translates the title and body into your language. Opt in via Preferences → Translation. On-device Apple Translation by default (free, private, no setup); articles longer than 1500 characters can use an OpenAI-compatible engine (base URL, model, and API key configurable in preferences)

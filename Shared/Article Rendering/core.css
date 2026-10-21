@@ -142,23 +142,75 @@ a.footnote {
 	font-size: 0.85em;
 	opacity: 0.7;
 }
-/* Comment thread shown below the article body */
+
+/* Comment thread shown below the article body.
+   The thread is laid out like a transcript: a numbered gutter carries the
+   position of every comment, the metadata of a comment sits on one line
+   above its body, and replies are indented under a hairline. The thread
+   keeps its own type scale so it reads as an appendix to the article
+   rather than as more article. */
+
+.articleCommentsSize {
+	margin: 0;
+	padding: 0;
+}
 
 .articleComments {
-	margin-top: 2.5em;
-	padding-top: 1em;
-	border-top: 1px solid var(--table-cell-border-color, rgba(0, 0, 0, 0.15));
+	--nnw-comment-ink: var(--article-title-color, #333);
+	--nnw-comment-muted: var(--article-date-color, rgba(0, 0, 0, 0.5));
+	--nnw-comment-rule: var(--table-cell-border-color, rgba(0, 0, 0, 0.14));
+	--nnw-comment-accent: var(--accent-color, var(--primary-accent-color, rgba(8, 106, 238, 1)));
+	--nnw-comment-mono: "SF Mono", ui-monospace, Menlo, Consolas, monospace;
+
+	margin-top: 2.75em;
+	margin-left: 0;
+	margin-right: 0;
+	padding: 1.7em 0 0 0;
+	font-size: 0.95em;
+	line-height: 1.5;
+	border-top: 1px solid var(--nnw-comment-rule);
+	border-radius: 0;
+}
+
+.articleCommentsHeader {
+	display: flex;
+	align-items: baseline;
+	justify-content: space-between;
+	gap: 1em;
+	margin: 0 0 1.05em 0;
+	padding: 0 0 0.6em 0;
+	border-bottom: 1px solid var(--nnw-comment-rule);
 }
 
 .articleCommentsHeading {
-	margin: 0 0 0.75em 0;
-	font-size: 1.1em;
-	font-weight: bold;
+	display: flex;
+	align-items: baseline;
+	gap: 0.55em;
+	margin: 0;
+	font-family: inherit;
+	font-size: 0.8em;
+	font-weight: 600;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+	color: var(--nnw-comment-muted);
 }
 
 .articleCommentsCount {
-	font-weight: normal;
-	opacity: 0.6;
+	font-family: var(--nnw-comment-mono);
+	font-size: 0.9em;
+	font-weight: 400;
+	font-variant-numeric: tabular-nums;
+	letter-spacing: 0;
+	opacity: 0.75;
+}
+
+.articleCommentsSource {
+	font-family: var(--nnw-comment-mono);
+	font-size: 0.72em;
+	letter-spacing: 0.04em;
+	color: var(--nnw-comment-muted);
+	opacity: 0.7;
+	white-space: nowrap;
 }
 
 .articleCommentList,
@@ -168,52 +220,173 @@ a.footnote {
 	list-style: none;
 }
 
-.articleCommentReplies {
-	margin-left: 1.25em;
-	padding-left: 0.75em;
-	border-left: 1px solid var(--table-cell-border-color, rgba(0, 0, 0, 0.15));
-}
-
 .articleComment {
-	margin-bottom: 1.25em;
+	display: grid;
+	grid-template-columns: 1.8em 1fr;
+	column-gap: 0.5em;
+	margin: 0;
+	padding: 0;
 }
 
-.articleCommentHeader {
-	display: flex;
-	align-items: center;
-	gap: 0.5em;
-	font-size: 0.85em;
-	color: var(--article-date-color, rgba(0, 0, 0, 0.5));
+.articleCommentList > .articleComment {
+	padding-top: 0.95em;
+	border-top: 1px solid var(--nnw-comment-rule);
 }
 
-.articleCommentAuthorCell {
-	display: flex;
-	align-items: center;
-	gap: 0.4em;
+.articleCommentList > .articleComment:first-child {
+	padding-top: 0;
+	border-top: none;
+}
+
+.articleCommentOrdinal {
+	font-family: var(--nnw-comment-mono);
+	font-size: 0.78em;
+	font-variant-numeric: tabular-nums;
+	line-height: 1.7;
+	color: var(--nnw-comment-muted);
+	text-align: right;
+	text-decoration: none;
+	opacity: 0.85;
+	transition: opacity 120ms ease-out, color 120ms ease-out;
+}
+
+.articleCommentOrdinal:hover {
+	color: var(--nnw-comment-accent);
+	opacity: 1;
+}
+
+.articleCommentContent {
+	display: grid;
+	grid-template-columns: auto 1fr;
+	column-gap: 0.6em;
+	align-items: start;
+	margin-left: 0;
+	margin-right: 0;
 }
 
 .articleCommentAvatar {
-	width: 20px;
-	height: 20px;
+	grid-column: 1;
+	grid-row: 1 / span 2;
+	width: 24px;
+	max-width: 24px;
+	height: 24px !important;
+	margin: 0;
 	border-radius: 50%;
-	flex: 0 0 auto;
+	background: var(--nnw-comment-rule);
+}
+
+.articleCommentMonogram {
+	grid-column: 1;
+	grid-row: 1 / span 2;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 24px;
+	height: 24px;
+	border-radius: 50%;
+	background: var(--nnw-comment-rule);
+	color: var(--nnw-comment-muted);
+	font-size: 0.7em;
+	font-weight: 600;
+}
+
+.articleCommentHead {
+	grid-column: 2;
+	grid-row: 1;
+	display: flex;
+	align-items: baseline;
+	flex-wrap: wrap;
+	gap: 0 0.6em;
+	margin: 0;
 }
 
 .articleCommentAuthor {
-	font-weight: bold;
-	color: var(--article-title-color, inherit);
+	font-size: 0.9em;
+	font-weight: 600;
+	color: var(--nnw-comment-ink);
+	text-decoration: none;
+}
+
+.articleCommentAuthor:hover {
+	text-decoration: underline;
 }
 
 .articleCommentDate {
+	font-size: 0.78em;
+	color: var(--nnw-comment-muted);
+	font-variant-numeric: tabular-nums;
 	white-space: nowrap;
 }
 
 .articleCommentBody {
-	margin-top: 0.35em;
+	grid-column: 2;
+	grid-row: 2;
+	margin: 0.3em 0 0 0;
+	font-size: 0.93em;
+	text-align: left;
+	overflow-wrap: anywhere;
 }
 
-.articleCommentPermalink {
-	margin-left: 0.4em;
-	opacity: 0.5;
+.articleCommentBody p {
+	margin: 0 0 0.45em 0;
+}
+
+.articleCommentBody p:last-child {
+	margin-bottom: 0;
+}
+
+.articleCommentBody a {
+	color: var(--nnw-comment-accent);
 	text-decoration: none;
+	border-bottom: 1px solid currentColor;
+}
+
+.articleCommentBody a:hover {
+	opacity: 0.8;
+}
+
+.articleCommentReplies {
+	grid-column: 2;
+	grid-row: 3;
+	margin: 0.7em 0 0 0;
+	padding: 0 0 0 0.8em;
+	border-left: 1px solid var(--nnw-comment-rule);
+}
+
+.articleCommentReplies .articleComment {
+	grid-template-columns: 1.7em 1fr;
+}
+
+.articleCommentReplies .articleCommentOrdinal {
+	font-size: 0.68em;
+}
+
+.articleCommentReplies .articleCommentAvatar,
+.articleCommentReplies .articleCommentMonogram {
+	width: 20px;
+	height: 20px !important;
+	max-width: 20px;
+}
+
+.articleComments a:focus-visible {
+	outline: 2px solid var(--nnw-comment-accent);
+	outline-offset: 2px;
+	border-radius: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.articleCommentOrdinal {
+		transition: none;
+	}
+}
+
+@media (max-width: 30em) {
+	.articleComments {
+		padding: 1.1em 1em 1.2em;
+	}
+
+	.articleComment {
+		grid-template-columns: 1.7em 1fr;
+		column-gap: 0.4em;
+	}
 }

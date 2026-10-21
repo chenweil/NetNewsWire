@@ -26,9 +26,9 @@ enum ArticleTextSize: Int, CaseIterable, Identifiable {
 		case .large:
 			return "largeText"
 		case .xlarge:
-			return "xLargeText"
+			return "xlargeText"
 		case .xxlarge:
-			return "xxLargeText"
+			return "xxlargeText"
 		}
 	}
 

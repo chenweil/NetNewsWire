@@ -278,6 +278,84 @@ struct CommentsTests {
         #expect(html.contains("#reply1"))
     }
 
+    @Test("Renderer numbers the comments in thread order")
+    func rendererNumbersComments() throws {
+        let first = ArticleComment(
+            id: "a",
+            authorName: "first",
+            bodyHTML: "one",
+            permalink: URL(string: "https://www.v2ex.com/t/1#reply1")
+        )
+        let second = ArticleComment(
+            id: "b",
+            authorName: "second",
+            bodyHTML: "two",
+            permalink: URL(string: "https://www.v2ex.com/t/1#reply2")
+        )
+        let html = CommentsHTMLRenderer.html(for: [first, second], sourceName: "V2EX")
+
+        #expect(html.contains("<a class=\"articleCommentOrdinal\" href=\"https://www.v2ex.com/t/1#reply1\" title=\"View comment on the original site\">1</a>"))
+        #expect(html.contains("<a class=\"articleCommentOrdinal\" href=\"https://www.v2ex.com/t/1#reply2\" title=\"View comment on the original site\">2</a>"))
+
+        // The ordinal comes before the author, so the number reads as the
+        // position of the comment in the thread.
+        let ordinal = try #require(html.range(of: "articleCommentOrdinal"))
+        let author = try #require(html.range(of: "articleCommentAuthor"))
+        #expect(ordinal.lowerBound < author.lowerBound)
+    }
+
+    @Test("Renderer numbers replies after the comment they answer")
+    func rendererNumbersRepliesInOrder() {
+        let reply = ArticleComment(
+            id: "r",
+            authorName: "reply",
+            bodyHTML: "reply body"
+        )
+        let parent = ArticleComment(
+            id: "p",
+            authorName: "parent",
+            bodyHTML: "parent body",
+            replies: [reply]
+        )
+        let html = CommentsHTMLRenderer.html(for: [parent], sourceName: "V2EX")
+
+        #expect(html.contains("articleCommentReplies"))
+        #expect(html.contains("<span class=\"articleCommentOrdinal\">1</span>"))
+        #expect(html.contains("<span class=\"articleCommentOrdinal\">2</span>"))
+    }
+
+    @Test("Renderer falls back to a monogram when there is no avatar")
+    func rendererUsesMonogramWithoutAvatar() {
+        let comment = ArticleComment(id: "1", authorName: "testsb", bodyHTML: "hi")
+        let html = CommentsHTMLRenderer.html(for: [comment], sourceName: "V2EX")
+
+        #expect(html.contains("articleCommentMonogram"))
+        #expect(html.contains(">T<"))
+        #expect(html.contains("articleCommentAvatar") == false)
+    }
+
+    @Test("Renderer marks up the date so it can be read by machines")
+    func rendererEmitsMachineReadableDate() {
+        let comment = ArticleComment(
+            id: "1",
+            authorName: "wangwaner",
+            bodyHTML: "hi",
+            date: Date(timeIntervalSince1970: 1792233452)
+        )
+        let html = CommentsHTMLRenderer.html(for: [comment], sourceName: "V2EX")
+
+        #expect(html.contains("<time class=\"articleCommentDate\" datetime=\""))
+    }
+
+    @Test("Renderer carries the article text size so the thread scales with it")
+    func rendererCarriesArticleTextSize() {
+        let comment = ArticleComment(id: "1", authorName: "wangwaner", bodyHTML: "hi")
+        let html = CommentsHTMLRenderer.html(for: [comment], sourceName: "V2EX")
+
+        #expect(html.contains("<div class=\"articleCommentsSize "))
+        #expect(html.contains("articleCommentList"))
+    }
+
     @Test("Renderer escapes the author name")
     func rendererEscapesAuthorName() {
         let comment = ArticleComment(id: "1", authorName: "<script>bad()</script>", bodyHTML: "hi")

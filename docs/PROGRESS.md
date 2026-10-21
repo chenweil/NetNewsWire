@@ -1,5 +1,137 @@
 # NetNewsWire Translation — Progress Log
 
+## 2026-10-21 — 评论线程版式重做
+
+### 问题
+
+用户看 V2EX 评论的第一版截图后提出「样式能否调整下，更好看些」。实际问题是
+**版式坏掉了**，不是配色不够好：
+
+1. **作者名跑到页面中间，时间戳被甩到最右**。根因是基础主题里的
+   `img, figure, video, div, object { margin: 0 auto }`：`.articleCommentAuthorCell`
+   是个 `div`，又是 flex item，auto margin 把剩余空间全吃掉 → 居中；
+   日期 span 没有 auto margin → 顶到最右。
+2. **每个评论正文下面挂一个孤零零的 `#`**（permalink 单独一行），像乱码。
+3. **评论之间没有分隔**，一整篇糊成一片，扫不出边界。
+4. **评论正文和文章正文同字号**，读者分不清「作者写的」和「网友说的」。
+
+### 实现内容
+
+**设计取向**：把评论线程做成**转录本（transcript）**——文章是正文，评论是附注。
+- 左侧一条**编号装订线**，每条评论的序号用等宽字体，兼作跳转到原站评论的链接
+- 头像靠左，**作者名与时间戳同行**（时间紧跟作者，不再跑到最右）
+- 评论块用**自己的字号层级**（0.95em 容器 / 正文 0.93em），明确矮于文章正文
+- 回复**缩进并挂在一条发丝导轨下**，头像更小
+- 段落间距收紧、`p:last-child` 去掉下边距
+- 时间戳用 `<time datetime>` 输出，机器可读
+- 没有头像时用**姓名首字母徽章**兜底
+- 去掉灰底色块，只用留白 + 细线分段（深色模式同样成立）
+
+**代码改动**
+- `Shared/Comments/CommentsHTMLRenderer.swift`：重写结构（编号、`<time>`、
+  首字母徽章、语义化 header）
+- `Shared/Article Rendering/core.css`：重写 `.articleComments*` 全部样式，
+  跟随主题变量（`--article-title-color` / `--article-date-color` /
+  `--table-cell-border-color` / `--accent-color`），所有主题都生效
+
+**顺带修掉的两个连带问题**
+- **X-Large / XX-Large 字号从来没生效过**：`ArticleTextSize.cssClass` 返回的是
+  `xLargeText` / `xxLargeText`，而**全部 9 个主题**（含基础主题）定义的类名是
+  `.xlargeText` / `.xxlargeText`（小写 l）—— 类名对不上，样式不命中。
+  另外 `.xxlarge` 原本也返回 `xLargeText`（复制粘贴漏改）。
+  补了 `ArticleTextSizeTests`：逐个字号断言主题样式表里存在对应规则，
+  以后再改名会直接测试失败
+- **评论不跟随文章的字号设置**：评论块是 `<article>` 的兄弟节点，拿不到
+  `#bodyContainer` 上的字号类；用户选「小」字号时评论反而比正文还大。
+  改成外层套一个带字号类的 wrapper，评论块用 `0.95em` 相对它缩放
+
+### 版本与提交
+
+- 版本号 7.1.2 → **7.2.1**（build 7108 → 7110）；发行说明补 7.2.1 / 7.2.0 两条
+- 提交拆成三个（分支 `chenwl`）：
+  1. `fix: make the translation display mode work when the article has no translation`
+  2. `feat: show comment threads for V2EX topics`
+  3. `feat: redesign the comment thread as a transcript`（含字号修复与版本）
+
+### 验证方式
+
+搭了一套**可复现的视觉回路**（`/tmp/nnw-preview`，临时文件）：
+把 `Shared/Comments/` 真实源码 + 真实 `core.css` + 真实主题 CSS 编译成独立程序，
+拉**线上真实 V2EX 回复**渲染成整页 HTML，再用 headless Chrome 截图，
+改一版看一版。字体/分支差异也在这里校准（预览要显式展开主题 CSS 的
+macOS 分支并替换 `[[font-size]]`，否则 headless Chrome 会落回 Times）。
+
+### 已知限制
+
+- 回复嵌套每层缩进约 50pt，两层以上会明显变窄（V2EX 本身是平铺的，
+  实际用不到）
+- 编号是**线程内位置**，不是站点自己的楼层号
+
+## 2026-10-21 — 评论展示 + 翻译显示模式修复
+
+### 问题
+
+1. **看不到评论**：V2EX 等论坛的 RSS 只带首帖正文，回复（评论）不在 feed 里，
+   NetNewsWire 原本没有任何抓取评论的能力。
+2. **Translation / Bilingual / Original 切换「没反应」**：机制本身是好的
+   （单元测试证明 JS 桥接函数存在且能正确切换可见性），真正的原因是
+   **文章没有译文时这个开关无事可做**，而 UI 不给任何提示：
+   - `TranslationStatus` 没有 `skipped` 分支，协调器返回的
+     `SkipReason`（`.disabled` / `.sourceMatchesTarget`）被直接丢弃成 `.idle`；
+   - 用户偏好里 `translation.skipWhenSourceMatchesTarget = true`、
+     目标语言 `zh-Hans`，读中文文章时必然跳过翻译 —— 开关永远按不动。
+
+### 实现内容
+
+**翻译显示模式修复**
+- `TranslationStatus` 新增 `.skipped(SkipReason)`，跳过原因不再丢失
+- `TranslationCoordinator.localSkipReason(for:bodyHTML:)`：纯本地判定，
+  不查缓存、不联网、不调引擎（配合 `SourceLanguageInspector`）
+- 文章视图新增状态行：翻译关闭 / 原文已是目标语言
+- 显示模式改为**渲染时生效**（服务端直接写 `hidden` 属性），
+  不再依赖文章页 JavaScript；切换时先走 JS 桥接（秒级、不重播打字机动画），
+  桥接不可用时回退到重新渲染
+- 工具栏 segmented control 在当前文章**没有译文时置灰**，
+  tooltip 说明原因 —— 不再出现「点了没反应」的死控件
+
+**评论抓取（Shared/Comments/）**
+- `ArticleComment`：评论模型（作者、头像、正文、时间、permalink、嵌套回复）
+- `CommentsProvider`：扩展点协议（`canProvideComments` / `fetchComments`）
+- `CommentsService`：按 URL 选 provider + 会话内缓存；
+  **没有任何 provider 认领的 URL 不会产生任何网络请求**
+- `V2EXCommentsProvider`：优先走 `api/replies/show.json`，
+  失败时回退解析主题页 HTML
+- `HTMLElementParser`：轻量 HTML 解析器（属性、嵌套、innerHTML、raw-text 跳过）
+- `CommentHTMLSanitizer`：剥掉 script / on* 事件 / `javascript:` URL
+- `CommentsHTMLRenderer`：渲染成文章视图里的评论块
+- 样式写在 `core.css`（所有主题都包含），跟随主题变量
+
+**偏好设置与版本**
+- Preferences → Translation 新增「Display Mode」下拉框 —— 工具栏控件在文章无译文时
+  是置灰的，模式仍要能设置
+- 工具栏控件通过 `DetailWebViewController.onTranslationAvailabilityChanged` → 
+  `DetailViewController` → `MainWindowController` 三级回调拿到可用性
+- 版本号 7.1.2 → **7.2.0**（build 7108 → 7109），发行说明已补
+
+**顺带修掉的老问题**
+- 切文章时上一篇文章的译文会闪一下：先重置 `translationStatus` 再渲染
+- 多次异步重渲染会乱序到达，导致页面显示旧状态：加了 `reloadToken`，
+  只有最后一次请求才渲染
+
+### 测试
+
+- `CommentsTests`：HTML 解析器、消毒器、V2EX JSON/HTML 两条路径、
+  provider 选择、渲染与转义
+- 翻译测试：跳过原因上报、显示模式在不启用文章 JS 时仍生效
+- 真实站点端到端验证：V2EX 主题 1249625 两条路径都取到 5 条回复，
+  与另一个 RSS 工具显示的一致
+
+### 已知限制
+
+- Flarum 系论坛（linux.do / linux.sb / w2solo）读不到回帖：帖子由前端渲染，
+  服务端 HTML 无正文，公开 API 全部 404
+- 其余站点要加评论 = 加一个 `CommentsProvider`，文章视图不用改
+
 ## 2026-10-08 — Issue #9 Complete ✅
 
 ### 实现内容
