@@ -68,11 +68,14 @@ final class DetailWebViewController: NSViewController {
 	deinit {
 		translationTask?.cancel()
 		skipCheckTask?.cancel()
+		commentsTask?.cancel()
 	}
 
 	var state: DetailState = .noSelection {
 		didSet {
 			if state != oldValue {
+				commentsTask?.cancel()
+				commentsHTML = ""
 				// Drop the previous article's translation before the new
 				// article is rendered, so it never shows up under the new
 				// article's body.
@@ -91,6 +94,7 @@ final class DetailWebViewController: NSViewController {
 				}
 				// Trigger translation for new articles
 				requestTranslationIfNeeded()
+				requestCommentsIfNeeded()
 			}
 		}
 	}
@@ -129,6 +133,8 @@ final class DetailWebViewController: NSViewController {
 	private var translationTask: Task<Void, Never>?
 	private var skipCheckTask: Task<Void, Never>?
 	private var streamedTranslationBody = ""
+	private var commentsTask: Task<Void, Never>?
+	private var commentsHTML = ""
 
 	/// Set while the translation status is being reset between articles, so
 	/// the reset does not trigger a render of its own.
@@ -460,14 +466,14 @@ private extension DetailWebViewController {
 	func htmlForCurrentTranslationStatus(_ articleHTML: String) -> String {
 		switch translationStatus {
 		case .idle:
-			return articleHTML
+			return articleHTML + commentsHTML
 		case .translating:
 			return """
 			<div class="translationStatus"><span>\(NSLocalizedString("Translating", comment: "Translation status"))</span><span data-translation-loading-dots>...</span></div>
 			\(translationStreamHTML(body: streamedTranslationBody))
 			\(translationLoadingScript)
 			\(translationStreamingScript)
-			\(articleHTML)
+			\(articleHTML)\(commentsHTML)
 			"""
 		case .translated(let translation):
 			let displayMode = TranslationSettings.shared.displayMode
@@ -493,11 +499,12 @@ private extension DetailWebViewController {
 			\(translationTypewriterScript)
 			\(translationDisplayModeScript)
 			</article>
+			\(commentsHTML)
 			"""
 		case .failed(let message):
 			return """
 			<div class="translationStatus">\(NSLocalizedString("Translation Failed", comment: "Translation status")): \(message.escapedHTML)</div>
-			\(articleHTML)
+			\(articleHTML)\(commentsHTML)
 			"""
 		case .skipped(let reason):
 			let message: String
@@ -509,13 +516,13 @@ private extension DetailWebViewController {
 			}
 			return """
 			<div class="translationStatus">\(message)</div>
-			\(articleHTML)
+			\(articleHTML)\(commentsHTML)
 			"""
 		case .streamingFailed(let message, let partialBody):
 			return """
 			<div class="translationStatus">\(NSLocalizedString("Translation Failed", comment: "Translation status")): \(message.escapedHTML)</div>
 			\(translationStreamHTML(body: partialBody))
-			\(articleHTML)
+			\(articleHTML)\(commentsHTML)
 			"""
 		}
 	}
@@ -920,6 +927,23 @@ private extension DetailWebViewController {
 		/// something to act on.
 		func notifyTranslationAvailabilityChanged() {
 			onTranslationAvailabilityChanged?(hasTranslation)
+		}
+
+		/// Fetches the comment thread for the current article, when a comments
+		/// provider serves its URL.
+		///
+		/// No request is made unless a provider claims the URL, so opening a
+		/// regular article never downloads the original page.
+		func requestCommentsIfNeeded() {
+			guard let articleURL = article?.url else { return }
+			guard let provider = CommentsService.shared.provider(for: articleURL) else { return }
+			commentsTask = Task { [weak self] in
+				let comments = await CommentsService.shared.comments(for: articleURL)
+				guard let self, !Task.isCancelled, !comments.isEmpty else { return }
+				self.commentsHTML = CommentsHTMLRenderer.html(for: comments, sourceName: provider.displayName)
+				guard self.isViewLoaded else { return }
+				self.reloadHTMLMaintainingScrollPosition()
+			}
 		}
 }
 

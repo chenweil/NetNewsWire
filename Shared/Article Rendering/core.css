@@ -142,3 +142,78 @@ a.footnote {
 	font-size: 0.85em;
 	opacity: 0.7;
 }
+/* Comment thread shown below the article body */
+
+.articleComments {
+	margin-top: 2.5em;
+	padding-top: 1em;
+	border-top: 1px solid var(--table-cell-border-color, rgba(0, 0, 0, 0.15));
+}
+
+.articleCommentsHeading {
+	margin: 0 0 0.75em 0;
+	font-size: 1.1em;
+	font-weight: bold;
+}
+
+.articleCommentsCount {
+	font-weight: normal;
+	opacity: 0.6;
+}
+
+.articleCommentList,
+.articleCommentReplies {
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.articleCommentReplies {
+	margin-left: 1.25em;
+	padding-left: 0.75em;
+	border-left: 1px solid var(--table-cell-border-color, rgba(0, 0, 0, 0.15));
+}
+
+.articleComment {
+	margin-bottom: 1.25em;
+}
+
+.articleCommentHeader {
+	display: flex;
+	align-items: center;
+	gap: 0.5em;
+	font-size: 0.85em;
+	color: var(--article-date-color, rgba(0, 0, 0, 0.5));
+}
+
+.articleCommentAuthorCell {
+	display: flex;
+	align-items: center;
+	gap: 0.4em;
+}
+
+.articleCommentAvatar {
+	width: 20px;
+	height: 20px;
+	border-radius: 50%;
+	flex: 0 0 auto;
+}
+
+.articleCommentAuthor {
+	font-weight: bold;
+	color: var(--article-title-color, inherit);
+}
+
+.articleCommentDate {
+	white-space: nowrap;
+}
+
+.articleCommentBody {
+	margin-top: 0.35em;
+}
+
+.articleCommentPermalink {
+	margin-left: 0.4em;
+	opacity: 0.5;
+	text-decoration: none;
+}
