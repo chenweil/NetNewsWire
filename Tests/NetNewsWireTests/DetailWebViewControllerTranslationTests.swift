@@ -345,26 +345,93 @@ struct DetailWebViewControllerTranslationTests {
         #expect(didAnimate, "SNAPSHOT: \(snapshot)")
     }
 
-    @Test("Translating status renders streamed text safely")
-    func translatingStatusRendersStreamedTextSafely() async throws {
+    @Test("Translating state shows a placeholder instead of raw markup")
+    func translatingStateShowsPlaceholderInsteadOfMarkup() async throws {
         let controller = DetailWebViewController()
         controller.loadViewIfNeeded()
         controller.state = .article(makeTestArticle(), nil)
         controller.translationStatus = .translating
 
-        let didRenderSafely = try await waitForJavaScriptBool(
+        // The reader sees a placeholder standing in for the incoming text.
+        let didShowPlaceholder = try await waitForJavaScriptBool(
+            "document.querySelector('[data-translation-skeleton]') !== null",
+            in: controller
+        )
+        #expect(didShowPlaceholder)
+
+        // …and no markup: the translation engine returns HTML, and showing
+        // it as it arrives dumps source code into the article view.
+        let didHideMarkup = try await evaluateJavaScriptBool(
             """
             (() => {
-                const didAppend = window.appendTranslationStreamDelta("<b>partial</b>");
-                const element = document.querySelector("[data-translation-stream]");
-                return didAppend
-                    && element?.textContent === "<b>partial</b>"
-                    && element?.querySelector("b") === null;
+                const page = document.body.innerHTML;
+                return !page.includes("data-translation-stream")
+                    && !page.includes("<p><strong>");
             })()
             """,
             in: controller
         )
-        #expect(didRenderSafely)
+        #expect(didHideMarkup)
+    }
+
+    @Test("The translating placeholder is actually visible")
+    func translatingPlaceholderIsVisible() async throws {
+        let controller = DetailWebViewController()
+        controller.loadViewIfNeeded()
+        // The harness never puts the view in a window, so the web view would
+        // have a zero-width viewport and every percentage width would collapse.
+        controller.view.frame = NSRect(x: 0, y: 0, width: 900, height: 700)
+        controller.webView.frame = NSRect(x: 0, y: 0, width: 900, height: 700)
+        controller.view.layoutSubtreeIfNeeded()
+        controller.state = .article(makeTestArticle(), nil)
+        controller.translationStatus = .translating
+
+        let isVisible = try await waitForJavaScriptBool(
+            """
+            (() => {
+                const line = document.querySelector(".translationSkeletonLine");
+                if (!line) {
+                    return false;
+                }
+                const rect = line.getBoundingClientRect();
+                const before = getComputedStyle(line, "::before");
+                // The shared stylesheet resets the height of every div, so
+                // the placeholder lines have to survive that reset.
+                return rect.height > 4
+                    && rect.width > 40
+                    && parseFloat(before.opacity) > 0;
+            })()
+            """,
+            in: controller
+        )
+        #expect(isVisible, "The translating placeholder rendered without visible bars")
+    }
+
+    @Test("Failed stream shows the partial translation as plain text")
+    func failedStreamShowsPlainTextPartial() async throws {
+        let controller = DetailWebViewController()
+        controller.loadViewIfNeeded()
+        controller.state = .article(makeTestArticle(), nil)
+        controller.translationStatus = .streamingFailed(
+            "Network unavailable",
+            partialBody: "<p>工具：<a href=\"https://example.com\">Seam Cutter</a></p>"
+        )
+
+        let didShowPlainText = try await waitForJavaScriptBool(
+            """
+            (() => {
+                const partial = document.querySelector("[data-translation-partial]");
+                if (!partial) {
+                    return false;
+                }
+                return partial.textContent.includes("工具")
+                    && partial.textContent.includes("Seam Cutter")
+                    && partial.querySelector("a") === null;
+            })()
+            """,
+            in: controller
+        )
+        #expect(didShowPlainText)
     }
 
     @Test("Display modes work when article JavaScript is disabled")

@@ -1,5 +1,10 @@
 # Mac Release Notes
 
+### 7.2.4 26 October 2026
+
+Changed the article view while a translation is being produced — the translation's raw HTML is no longer shown on screen. A shimmering placeholder stands in for the incoming text, and the finished translation fades in over it
+Fixed a failed translation showing the HTML of the partial translation instead of its text
+
 ### 7.2.3 21 October 2026
 
 Fixed the About window, whose copyright line was cut off once it named the author of this version

@@ -11,6 +11,7 @@ This document captures scope and behavior. Domain vocabulary lives in [`../CONTE
 3. The translation appears below the original, separated by a thin rule. The reader can toggle between `translation` (default), `bilingual`, and `original` via a segmented control.
 4. The title is translated once; the body is translated once. Subsequent openings of the same article in the same target language come from a cache persisted in the Articles database.
 5. Translation failures (network, rate limit, missing language pack) are surfaced inline with a retry affordance; the original text remains readable.
+6. While the translation is being produced, the article view shows a shimmering placeholder — never the translation's source markup — and the finished translation fades in over it.
 
 ## Engines
 
@@ -42,14 +43,16 @@ If the OpenAI-compatible engine is selected but no API key is configured, Apple 
 | 15 | New Preferences → Translation tab                     | Five+ settings need their own surface            |
 | 16 | No in-app onboarding; release notes only              | Project tradition (see existing release notes)  |
 | 17 | Unit tests for `TranslationCoordinator` only          | Branches and cache invariants; the rest is manual QA |
+| 18 | Placeholder animation while translating, never live markup | The engine returns HTML; a partial translation dumped source code into the article view |
 
 ## Architectural decisions
 
-Three decisions are non-obvious enough to warrant their own records:
+Four decisions are non-obvious enough to warrant their own records:
 
 - [Apple Translation as Primary Engine](../docs/adr/0001-apple-translation-as-primary-engine.md)
 - [LLM Long-Text Fallback Above 1500 Characters](../docs/adr/0002-llm-long-text-fallback.md)
 - [OpenAI-Compatible HTTP Client Instead of a Per-Vendor Client](../docs/adr/0003-openai-compatible-http-client.md)
+- [Placeholder Animation Instead of Live Markup While Translating](../docs/adr/0005-placeholder-animation-instead-of-live-markup.md)
 
 ## Manual QA checklist
 
@@ -64,6 +67,8 @@ Before each release with translation changes, verify by hand:
 - [ ] Toggling article extractor off then on re-runs translation using extracted body
 - [ ] Switching target language in preferences re-runs translation on next open
 - [ ] Kill app, reopen same English article → translation renders immediately from cache
+- [ ] Translation in progress → placeholder shimmer shows, no source markup on the page; finished translation fades in
+- [ ] Stream fails halfway → partial translation shows as plain text, with no tags
 
 ## Out of scope (deliberately)
 

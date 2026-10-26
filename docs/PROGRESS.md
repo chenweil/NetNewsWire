@@ -1,5 +1,86 @@
 # NetNewsWire Translation — Progress Log
 
+## 2026-10-26 — 翻译中不再显示源码，改为过渡动画
+
+用户反馈翻译时界面很丑，直接露出了 HTML 源码：翻译引擎返回的是 HTML，
+流式到达时被当成纯文本转义显示，于是文章视图里出现
+`<p><strong>工具：</strong> <a href="…">Seam Cutter</a></p>`。
+原定的打字机效果打在这份源码上，等于把难看放大。
+
+**改法**：翻译进行中不再渲染任何译文内容，改用骨架微光占位。
+
+- `Mac/MainWindow/Detail/DetailWebViewController.swift`：
+  - `.translating` 分支：删掉 `translationStreamHTML` + `translationStreamingScript`，
+    换成 `translationSkeletonHTML`（6 条占位线）
+  - 删除 `translationStreamingScript`（`setTranslationStreamText` /
+    `appendTranslationStreamDelta` 两个 JS 桥）、`renderPendingTranslationStream()`、
+    `javascriptStringLiteral(_:)`，以及 `didFinish` 里的旧调用
+  - `receiveTranslationDelta(_:)` 改为只累积，不再往 web view 推文本
+  - `.streamingFailed` 分支：残留的半截译文先剥标签再显示（`translationPartialHTML`），
+    失败路径同样不出现源码
+- `Shared/Article Rendering/core.css`：
+  - 新增 `.translationSkeleton` / `.translationSkeletonLine`：用 `currentColor`
+    画的微光扫过动画，所有主题自动跟随，无需主题专属规则
+  - 新增 `.translatedArticleBody` 淡入（`nnwTranslationFadeIn`），译文到位时
+    覆盖在占位符上
+  - 新增 `.translationPartial`：失败时的纯文本残片
+  - `prefers-reduced-motion: reduce` 下关掉扫光与淡入
+- `Tests/NetNewsWireTests/DetailWebViewControllerTranslationTests.swift`：
+  - 「Translating status renders streamed text safely」改为
+    「Translating state shows a placeholder instead of raw markup」：
+    断言占位符出现，且页面里没有 `data-translation-stream`、没有 `<p><strong>`
+  - 新增「Failed stream shows the partial translation as plain text」：
+    断言残片是纯文本、没有 `<a>` 标签
+- 文档：ADR 0004 改写（流式内容不再进正文）、新增 ADR 0005、
+  `Technotes/Translation.markdown` 决策表加第 18 条与两条 QA 项
+
+### 占位条第一次没显示出来（div 高度被全局重置吃掉）
+
+用户装包实测反馈「没看到动画」——截图里 "Translating" 下面是一大片空白，
+一根条子都没有。
+
+原因不在新样式，在共享样式表 `Shared/Article Rendering/stylesheet.css`：
+
+```css
+img, figure, video, div, object {
+	max-width: 100%;
+	height: auto !important;   /* ← 干掉所有 div 的显式高度 */
+	margin: 0 auto;
+}
+```
+
+占位条本来是空的 `<div>`，高度被这条 `!important` 重置成 `auto`，
+空 div 高度就塌成 0 —— 只剩 margin 撑出来的那段空白。
+
+修法：占位条从 `<div>` 改成 `<span class="translationSkeletonLine">`
+（`display: block`）。`span` 不在那条重置的选择器里，高度不会被清掉。
+
+**教训**：这个仓库的共享样式表有一条针对 `div` 的全局重置，任何"空 div +
+显式高度"的骨架/占位方案都会中招。写这类东西要先看 `stylesheet.css`。
+
+**回归测试**：新增「The translating placeholder is actually visible」——
+在真实 WKWebView 里断言占位条 `getBoundingClientRect()` 宽高都 > 0、
+`::before` 的 opacity > 0。变异体回测确认有效：把 `<span>` 改回 `<div>`，
+该测试立刻失败。
+
+另外发现测试 harness 的 web view 没有视口宽度（`innerWidth == 0`），
+百分比宽度会全部塌成 0 —— 断言可视性前得先给 `webView.frame` 赋一个真实尺寸。
+
+**版本**：7.2.3 → **7.2.4**（build 7112 → 7113），发行说明补 7.2.4。
+之前测试用的两个包都是 7.2.3/7112（一个坏一个好），版本号必须能区分开，
+否则 Sparkle 会当成同一个版本。
+
+同时补了一条回归测试「The translating placeholder is actually visible」，
+在真实 WKWebView 里断言占位条的 `getBoundingClientRect()` 宽高都大于 0、
+`::before` 的 opacity 大于 0。变异体回测确认有效：把 `<span>` 改回 `<div>`，
+该测试立刻失败。
+
+另外发现测试 harness 的 web view 没有视口宽度（`innerWidth == 0`），
+百分比宽度会全部塌成 0 —— 断言可视性前得先给 `webView.frame` 赋一个真实尺寸。
+
+**取舍**：读者看不到译文逐字到达，改为在动画后等待。这是刻意的 —— 另一种做法
+是把流当活 HTML 注入页面，既有净化问题，也会被半截标签搞出闪烁。
+
 ## 2026-10-21 — About 面板归属 + 评论模块崩溃加固
 
 ### About 面板

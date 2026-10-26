@@ -143,6 +143,143 @@ a.footnote {
 	opacity: 0.7;
 }
 
+/* Placeholder shown while the translation is being produced.
+
+   The translation engine returns HTML, and a partial translation is not
+   valid HTML yet — showing it as it arrives put raw markup into the
+   article view. A shimmering skeleton stands in for the incoming text
+   instead, and the finished translation fades in over it. The skeleton is
+   drawn with `currentColor`, so it follows every theme without any
+   theme-specific rules. */
+
+.translationSkeleton {
+	margin: 0 0 1.6em 0;
+	padding: 0;
+	pointer-events: none;
+}
+
+.translationSkeletonLine {
+	display: block;
+	position: relative;
+	overflow: hidden;
+	height: 0.8em;
+	margin: 0 0 0.9em 0;
+	border-radius: 0.25em;
+}
+
+/* The base bar and the sweeping highlight are separate layers: opacity on
+   the line itself would dim the highlight along with the bar. */
+
+.translationSkeletonLine::before {
+	content: "";
+	position: absolute;
+	inset: 0;
+	background-color: currentColor;
+	opacity: 0.08;
+}
+
+.translationSkeletonLine:nth-child(1) {
+	width: 56%;
+	height: 1.15em;
+}
+
+.translationSkeletonLine:nth-child(2) {
+	width: 93%;
+}
+
+.translationSkeletonLine:nth-child(3) {
+	width: 82%;
+}
+
+.translationSkeletonLine:nth-child(4) {
+	width: 97%;
+}
+
+.translationSkeletonLine:nth-child(5) {
+	width: 71%;
+}
+
+.translationSkeletonLine:nth-child(6) {
+	width: 33%;
+	margin-bottom: 0;
+}
+
+.translationSkeletonLine::after {
+	content: "";
+	position: absolute;
+	inset: 0;
+	background-image: linear-gradient(90deg, transparent 0%, currentColor 45%, transparent 90%);
+	opacity: 0.2;
+	transform: translateX(-100%);
+	animation: nnwTranslationShimmer 1.9s ease-in-out infinite;
+}
+
+.translationSkeletonLine:nth-child(2)::after {
+	animation-delay: 0.12s;
+}
+
+.translationSkeletonLine:nth-child(3)::after {
+	animation-delay: 0.24s;
+}
+
+.translationSkeletonLine:nth-child(4)::after {
+	animation-delay: 0.36s;
+}
+
+.translationSkeletonLine:nth-child(5)::after {
+	animation-delay: 0.48s;
+}
+
+.translationSkeletonLine:nth-child(6)::after {
+	animation-delay: 0.6s;
+}
+
+@keyframes nnwTranslationShimmer {
+	0% {
+		transform: translateX(-100%);
+	}
+	60%, 100% {
+		transform: translateX(100%);
+	}
+}
+
+/* The finished translation fades in where the placeholder was. */
+
+.translatedArticleBody {
+	animation: nnwTranslationFadeIn 0.35s ease-out;
+}
+
+@keyframes nnwTranslationFadeIn {
+	from {
+		opacity: 0;
+	}
+	to {
+		opacity: 1;
+	}
+}
+
+/* The text a failed stream did produce. Plain text only — never markup. */
+
+.translationPartial {
+	margin: 0 0 1.6em 0;
+	padding: 0.1em 0 0.1em 0.9em;
+	border-left: 2px solid currentColor;
+	opacity: 0.6;
+	white-space: pre-wrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.translationSkeletonLine::after {
+		animation: none;
+		transform: none;
+		opacity: 0;
+	}
+
+	.translatedArticleBody {
+		animation: none;
+	}
+}
+
 /* Comment thread shown below the article body.
    The thread is laid out like a transcript: a numbered gutter carries the
    position of every comment, the metadata of a comment sits on one line

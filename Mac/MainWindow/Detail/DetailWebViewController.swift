@@ -357,7 +357,6 @@ extension DetailWebViewController: WKNavigationDelegate, WKUIDelegate {
 	}
 
 	public func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-		renderPendingTranslationStream()
 		guard let windowScrollY else {
 			return
 		}
@@ -470,9 +469,8 @@ private extension DetailWebViewController {
 		case .translating:
 			return """
 			<div class="translationStatus"><span>\(NSLocalizedString("Translating", comment: "Translation status"))</span><span data-translation-loading-dots>...</span></div>
-			\(translationStreamHTML(body: streamedTranslationBody))
+			\(translationSkeletonHTML)
 			\(translationLoadingScript)
-			\(translationStreamingScript)
 			\(articleHTML)\(commentsHTML)
 			"""
 		case .translated(let translation):
@@ -521,15 +519,44 @@ private extension DetailWebViewController {
 		case .streamingFailed(let message, let partialBody):
 			return """
 			<div class="translationStatus">\(NSLocalizedString("Translation Failed", comment: "Translation status")): \(message.escapedHTML)</div>
-			\(translationStreamHTML(body: partialBody))
+			\(translationPartialHTML(body: partialBody))
 			\(articleHTML)\(commentsHTML)
 			"""
 		}
 	}
 
-	func translationStreamHTML(body: String) -> String {
+	/// Placeholder shown while the translation is being produced.
+	///
+	/// The translation engine returns HTML, and a partial translation is not
+	/// valid HTML yet — showing it as it arrives dumped raw markup into the
+	/// article view. Instead the reader sees a shimmering skeleton standing in
+	/// for the incoming text, and the finished translation fades in over it.
+	///
+	/// The lines are spans, not divs: the shared stylesheet resets the height
+	/// of every div, which would collapse them to nothing.
+	var translationSkeletonHTML: String {
 		"""
-		<div class="translatedArticleBody articleBody" data-translation-stream style="white-space: pre-wrap;">\(body.escapedHTML)</div>
+		<div class="translationSkeleton" data-translation-skeleton aria-hidden="true">
+		<span class="translationSkeletonLine"></span>
+		<span class="translationSkeletonLine"></span>
+		<span class="translationSkeletonLine"></span>
+		<span class="translationSkeletonLine"></span>
+		<span class="translationSkeletonLine"></span>
+		<span class="translationSkeletonLine"></span>
+		</div>
+		"""
+	}
+
+	/// Renders the partial translation left behind by a failed stream.
+	///
+	/// The partial body is HTML from the translation engine. Showing it as-is
+	/// would put markup into the article view, so the tags are stripped and
+	/// only the text is shown.
+	func translationPartialHTML(body: String) -> String {
+		let text = AppleTranslationEngine.stripHTML(body)
+		guard !text.isEmpty else { return "" }
+		return """
+		<div class="translationPartial" data-translation-partial>\(text.escapedHTML)</div>
 		"""
 	}
 
@@ -551,36 +578,6 @@ private extension DetailWebViewController {
 				count = (count + 1) % 4;
 				dots.textContent = ".".repeat(count);
 			}, 500);
-		})();
-		</script>
-		"""
-	}
-
-	var translationStreamingScript: String {
-		"""
-		<script>
-		(function() {
-			function root() {
-				return document.querySelector("[data-translation-stream]");
-			}
-
-			window.setTranslationStreamText = function(text) {
-				const element = root();
-				if (!element) {
-					return false;
-				}
-				element.textContent = String(text);
-				return true;
-			};
-
-			window.appendTranslationStreamDelta = function(delta) {
-				const element = root();
-				if (!element) {
-					return false;
-				}
-				element.appendChild(document.createTextNode(String(delta)));
-				return true;
-			};
 		})();
 		</script>
 		"""
@@ -740,41 +737,16 @@ private extension DetailWebViewController {
 		translationTask = nil
 	}
 
+	/// Accumulates the streamed translation.
+	///
+	/// The stream is not shown while it arrives: a partial translation is
+	/// incomplete HTML, and showing it verbatim dumped raw markup into the
+	/// article view. The reader sees a placeholder instead, and the finished
+	/// translation when it is ready. The accumulated body is still kept, so a
+	/// stream that fails halfway can show the text it did produce.
 	func receiveTranslationDelta(_ delta: String) {
 		guard !delta.isEmpty else { return }
 		streamedTranslationBody.append(delta)
-
-		guard
-			let javascriptLiteral = javascriptStringLiteral(delta),
-			let webView
-		else {
-			return
-		}
-
-		webView.evaluateJavaScript("window.appendTranslationStreamDelta(\(javascriptLiteral));") { [weak self] result, _ in
-			guard (result as? Bool) != true else { return }
-			self?.renderPendingTranslationStream()
-		}
-	}
-
-	func renderPendingTranslationStream() {
-		guard case .translating = translationStatus, !streamedTranslationBody.isEmpty else {
-			return
-		}
-		guard let javascriptLiteral = javascriptStringLiteral(streamedTranslationBody) else {
-			return
-		}
-		webView?.evaluateJavaScript("window.setTranslationStreamText(\(javascriptLiteral));", completionHandler: nil)
-	}
-
-	func javascriptStringLiteral(_ value: String) -> String? {
-		guard
-			let data = try? JSONSerialization.data(withJSONObject: [value]),
-			let encoded = String(data: data, encoding: .utf8)
-		else {
-			return nil
-		}
-		return String(encoded.dropFirst().dropLast())
 	}
 
 		// MARK: - Translation
