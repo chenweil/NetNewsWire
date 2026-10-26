@@ -34,6 +34,27 @@ import Testing
 		#expect(ArticleStringFormatter.sanitizedTitle(nil, forHTML: forHTML) == nil)
 	}
 
+	// MARK: - Angle-bracketed text that isn't HTML
+
+	// A title that is literal text in angle brackets — from an Atom
+	// <title type="text"> — must display as-is, not vanish or mangle.
+	// <https://github.com/Ranchero-Software/NetNewsWire/issues/722>
+
+	@Test func angleBracketedTextForHTMLIsEscaped() {
+		#expect(ArticleStringFormatter.sanitizedTitle("<hello-world>", forHTML: true) == "&lt;hello-world&gt;")
+	}
+
+	@Test func angleBracketedTextNotForHTMLIsPreserved() {
+		#expect(ArticleStringFormatter.sanitizedTitle("<hello-world>", forHTML: false) == "<hello-world>")
+	}
+
+	@Test func htmlLookingTitleWordForHTMLIsEscaped() {
+		#expect(
+			ArticleStringFormatter.sanitizedTitle("It All Starts with a Humble <textarea>", forHTML: true)
+			== "It All Starts with a Humble &lt;textarea&gt;"
+		)
+	}
+
 	// MARK: - Allowed tags (b, i, em, etc.)
 
 	@Test func allowedTagForHTMLIsPreserved() {
@@ -77,6 +98,40 @@ import Testing
 		)
 	}
 
+	// MARK: - abbr (issue #3325)
+
+	// The Register and similar feeds put `<abbr title="…">` in titles.
+	// The tag is matched by name (attributes ignored), so it's recognized
+	// as an allowed tag rather than shown as raw markup.
+
+	@Test("abbr with attribute is preserved under forHTML (real element in detail pane)")
+	func abbrWithAttributeForHTML() {
+		#expect(
+			ArticleStringFormatter.sanitizedTitle("[<abbr title=\"Not Safe For Work\">NSFW</abbr>]", forHTML: true)
+			== "[<abbr title=\"Not Safe For Work\">NSFW</abbr>]"
+		)
+	}
+
+	@Test("abbr with attribute is dropped under forHTML=false, contents kept")
+	func abbrWithAttributeNotForHTML() {
+		#expect(
+			ArticleStringFormatter.sanitizedTitle("[<abbr title=\"Not Safe For Work\">NSFW</abbr>]", forHTML: false)
+			== "[NSFW]"
+		)
+	}
+
+	// Matching is by tag name, so an allowed tag carrying an attribute
+	// is still recognized (previously it was matched whole-body and
+	// treated as disallowed).
+
+	@Test func allowedTagWithAttributeForHTML() {
+		#expect(ArticleStringFormatter.sanitizedTitle("<cite id=\"x\">Book</cite>", forHTML: true) == "<cite id=\"x\">Book</cite>")
+	}
+
+	@Test func allowedTagWithAttributeNotForHTML() {
+		#expect(ArticleStringFormatter.sanitizedTitle("<cite id=\"x\">Book</cite>", forHTML: false) == "Book")
+	}
+
 	// MARK: - Slash handling
 
 	// The implementation strips ALL slashes from the tag name before
@@ -103,19 +158,34 @@ import Testing
 
 	// MARK: - Malformed input
 
-	// Unclosed tag (no `>` to terminate). We scan to end of input as
-	// the tag body and still emit closing punctuation — a slightly
-	// weird but stable behavior inherited from the Scanner-based
-	// predecessor, which tests pinned to preserve.
+	// Unclosed tag (no `>` to terminate). The `<` and its trailing text
+	// are kept, but no closing `>` is synthesized — so a literal `<`
+	// followed by text stays faithful to the input (issue #4742).
 
-	@Test("Unclosed tag with forHTML=false emits literal `<tag>` with synthesized `>`")
+	@Test("Unclosed tag with forHTML=false keeps `<tag`, no synthesized `>`")
 	func unclosedTagNotForHTML() {
-		#expect(ArticleStringFormatter.sanitizedTitle("foo <bar", forHTML: false) == "foo <bar>")
+		#expect(ArticleStringFormatter.sanitizedTitle("foo <bar", forHTML: false) == "foo <bar")
 	}
 
-	@Test("Unclosed tag with forHTML=true emits escaped `&lt;tag&gt;`")
+	@Test("Unclosed tag with forHTML=true escapes `<` and keeps text, no synthesized `>`")
 	func unclosedTagForHTML() {
-		#expect(ArticleStringFormatter.sanitizedTitle("foo <bar", forHTML: true) == "foo &lt;bar&gt;")
+		#expect(ArticleStringFormatter.sanitizedTitle("foo <bar", forHTML: true) == "foo &lt;bar")
+	}
+
+	// #4742: a title with a literal `<` (from an entity like `&#x3C;`)
+	// followed by non-tag text — here `<16s` — must not be truncated at
+	// the `<`, and must not gain a spurious trailing `>`. The whole
+	// title survives; the `<` is escaped so `simpleHTML` shows it as text.
+	@Test func literalLessThanInTitleIsNotTruncated() {
+		let input = "No place in children's hands: <16s in UK to be banned"
+		#expect(
+			ArticleStringFormatter.sanitizedTitle(input, forHTML: true)
+			== "No place in children's hands: &lt;16s in UK to be banned"
+		)
+		#expect(
+			ArticleStringFormatter.sanitizedTitle(input, forHTML: false)
+			== "No place in children's hands: <16s in UK to be banned"
+		)
 	}
 
 	// Bare `<` at end of input: no tag body, emit nothing for it.

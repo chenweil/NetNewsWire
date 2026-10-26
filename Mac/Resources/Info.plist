@@ -67,8 +67,8 @@
 	<string>along</string>
 	<key>NNWVersionAuthorURL</key>
 	<string>https://github.com/chenweil/NetNewsWire</string>
-	<key>NSMainStoryboardFile</key>
-	<string>Main</string>
+	<key>NSMainNibFile</key>
+	<string>MainMenu</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
 	<key>NSUserActivityTypes</key>
@@ -79,6 +79,8 @@
 	<string>NetNewsWire.sdef</string>
 	<key>OrganizationIdentifier</key>
 	<string>$(ORGANIZATION_IDENTIFIER)</string>
+	<key>SUEnableInstallerLauncherService</key>
+	<true/>
 	<key>SUFeedURL</key>
 	<string>https://ranchero.com/downloads/netnewswire-release.xml</string>
 	<key>UserAgent</key>

@@ -42,9 +42,9 @@ struct Assets {
 		nonisolated static var nnwFeedIcon: RSImage { RSImage(named: "nnwFeedIcon")! }
 		static var faviconTemplate: RSImage { RSImage(named: "faviconTemplateImage")! }
 
-		static var articleExtractorError: RSImage { RSImage(named: "articleExtractorError")! }
-		static var articleExtractorOn: RSImage { RSImage(named: "articleExtractorOn")! }
-		static var articleExtractorOff: RSImage { RSImage(named: "articleExtractorOff")! }
+		static let articleExtractorOff: RSImage = RSImage(symbol: "text.page")!
+		static let articleExtractorOn: RSImage = RSImage(symbol: "text.page.fill")!
+		static let articleExtractorError: RSImage = RSImage(symbol: "text.page.slash")!
 		static let share = RSImage(symbol: "square.and.arrow.up")!
 		static let folder = RSImage(symbol: "folder")!
 		static let starredFeed = IconImage(starClosed, isSymbol: true, isBackgroundSuppressed: true, preferredColor: Assets.Colors.star)
@@ -80,15 +80,6 @@ struct Assets {
 #else // iOS
 		static var accountLocalPadImage: RSImage { RSImage(named: "accountLocalPad")! }
 		static var accountLocalPhoneImage: RSImage { RSImage(named: "accountLocalPhone")! }
-
-		static var articleExtractorOnSF: RSImage { RSImage(named: "articleExtractorOnSF")! }
-		static let articleExtractorOffSF = RSImage(symbol: "doc.plaintext")!
-		static var articleExtractorOnTinted: RSImage {
-			articleExtractorOn.tinted(color: Assets.Colors.primaryAccent)!
-		}
-		static var articleExtractorOffTinted: RSImage {
-			articleExtractorOff.tinted(color: Assets.Colors.primaryAccent)!
-		}
 
 		static let circleClosed = RSImage(symbol: "largecircle.fill.circle")!
 		static let markBelowAsRead = RSImage(symbol: "arrowtriangle.down.circle")!

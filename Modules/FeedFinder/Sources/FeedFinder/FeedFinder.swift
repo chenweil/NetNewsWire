@@ -47,7 +47,7 @@ extension FeedFinderError: FeedRetrievalFailure {
 }
 
 public final class FeedFinder {
-	private static let logger = Logger(subsystem: Bundle.main.bundleIdentifier!, category: "FeedFinder")
+	private static let logger = Logger(subsystem: Logger.nnwSubsystem, category: "FeedFinder")
 
 	/// Which discovery path produced the result. Used to write a more useful
 	/// completion message on the parent `findFeed` activity.
@@ -104,8 +104,11 @@ public final class FeedFinder {
 			throw FeedFinderError.feedNotFound(statusCode: response.statusCodeIfReceived)
 		}
 
-		if FeedFinder.isFeed(data, url.absoluteString) {
-			let feedSpecifier = FeedSpecifier(title: nil, urlString: url.absoluteString, source: .userEntered, orderFound: 1)
+		// Redirects mean relative links have to resolve against where the page actually came from.
+		let urlToUse = response.url ?? url
+
+		if FeedFinder.isFeed(data, urlToUse.absoluteString) {
+			let feedSpecifier = FeedSpecifier(title: nil, urlString: urlToUse.absoluteString, source: .userEntered, orderFound: 1)
 			return (Set([feedSpecifier]), .directFeed)
 		}
 
@@ -113,7 +116,7 @@ public final class FeedFinder {
 			throw FeedFinderError.feedNotFound(statusCode: response.statusCodeIfReceived)
 		}
 
-		return try await FeedFinder.findFeedsInHTMLPage(htmlData: data, urlString: url.absoluteString)
+		return try await FeedFinder.findFeedsInHTMLPage(htmlData: data, urlString: urlToUse.absoluteString)
 	}
 
 	/// Wraps `Downloader.shared.download(url)` with a per-URL activity entry so the

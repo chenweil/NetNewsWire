@@ -46,9 +46,10 @@ struct HTTP4xxResponse {
 	private var urlSession: URLSession!
 	private var tasksInProgress = Set<URLSessionTask>()
 	private var tasksPending = Set<URLSessionTask>()
-	private var taskIdentifierToInfoDictionary = [Int: DownloadInfo]()
+	private var taskToInfoDictionary = [URLSessionTask: DownloadInfo]()
 	private var urlsInSession = Set<URL>()
 	private let delegate: DownloadSessionDelegate
+	private let sessionConfiguration: URLSessionConfiguration
 	private var redirectCache = [URL: URL]()
 	private var queue = [URL]()
 
@@ -68,7 +69,7 @@ struct HTTP4xxResponse {
 	private var http4xxResponses = [URL: HTTP4xxResponse]()
 	private var authorizationIdentifiers = [URL: String]()
 
-	private static let logger = Logger(subsystem: Bundle.main.bundleIdentifier!, category: "DownloadSession")
+	private static let logger = Logger(subsystem: Logger.nnwSubsystem, category: "DownloadSession")
 
 	public convenience init(delegate: DownloadSessionDelegate) {
 		self.init(delegate: delegate, sessionConfiguration: .ephemeral)
@@ -77,11 +78,28 @@ struct HTTP4xxResponse {
 	init(delegate: DownloadSessionDelegate, sessionConfiguration: URLSessionConfiguration) {
 
 		self.delegate = delegate
+		self.sessionConfiguration = sessionConfiguration
 
 		super.init()
 
+		urlSession = makeURLSession()
+	}
+
+	/// Invalidate the session and build a new one, discarding pooled connections,
+	/// which go dead while the app is suspended.
+	public func recreateURLSession() {
+		urlSession.invalidateAndCancel()
+		urlSession = makeURLSession()
+	}
+
+	private func makeURLSession() -> URLSession {
+		// The configuration comes from the caller, so a test can inject its own
+		// protocol classes to stub the network.
+		let sessionConfiguration = self.sessionConfiguration
 		sessionConfiguration.requestCachePolicy = .reloadIgnoringLocalCacheData
 		sessionConfiguration.timeoutIntervalForRequest = 15.0
+		sessionConfiguration.timeoutIntervalForResource = 60.0
+		sessionConfiguration.waitsForConnectivity = true
 		sessionConfiguration.httpShouldSetCookies = false
 		sessionConfiguration.httpCookieAcceptPolicy = .never
 		sessionConfiguration.httpMaximumConnectionsPerHost = 1
@@ -92,7 +110,7 @@ struct HTTP4xxResponse {
 			sessionConfiguration.httpAdditionalHeaders = userAgentHeaders
 		}
 
-		urlSession = URLSession(configuration: sessionConfiguration, delegate: self, delegateQueue: OperationQueue.main)
+		return URLSession(configuration: sessionConfiguration, delegate: self, delegateQueue: OperationQueue.main)
 	}
 
 	deinit {
@@ -102,6 +120,7 @@ struct HTTP4xxResponse {
 	// MARK: - API
 
 	public func cancelAll() {
+		queue.removeAll()
 		urlSession.getTasksWithCompletionHandler { dataTasks, uploadTasks, downloadTasks in
 			for task in dataTasks {
 				task.cancel()
@@ -122,6 +141,12 @@ struct HTTP4xxResponse {
 		cleanUp4xxResponsesCache()
 
 		let filteredURLs = Self.filteredURLs(urls)
+
+		if filteredURLs.isEmpty {
+			delegate.downloadSessionDidComplete(self)
+			return
+		}
+
 		for url in filteredURLs {
 			addDataTask(url)
 		}
@@ -262,11 +287,13 @@ private extension DownloadSession {
 		if requestShouldBeDroppedDueToActive429(urlToUse) {
 			Self.logger.info("DownloadSession: Dropping request for previous 429: \(urlToUse)")
 			delegate.downloadSession(self, didSkip: url, reason: "Skipped — previous 429 Too Many Requests")
+			addDataTaskFromQueueIfNecessary()
 			return
 		}
 		if requestShouldBeDroppedDueToPrevious400(urlToUse) {
 			Self.logger.info("DownloadSession: Dropping request for previous 400-499: \(urlToUse)")
 			delegate.downloadSession(self, didSkip: url, reason: "Skipped — previous 4xx error")
+			addDataTaskFromQueueIfNecessary()
 			return
 		}
 
@@ -284,7 +311,7 @@ private extension DownloadSession {
 
 		let info = DownloadInfo(url)
 		info.requestContext = context
-		taskIdentifierToInfoDictionary[task.taskIdentifier] = info
+		taskToInfoDictionary[task] = info
 
 		tasksPending.insert(task)
 		task.resume()
@@ -296,13 +323,13 @@ private extension DownloadSession {
 	}
 
 	func infoForTask(_ task: URLSessionTask) -> DownloadInfo? {
-		return taskIdentifierToInfoDictionary[task.taskIdentifier]
+		return taskToInfoDictionary[task]
 	}
 
 	@MainActor func removeTask(_ task: URLSessionTask) {
 		tasksInProgress.remove(task)
 		tasksPending.remove(task)
-		taskIdentifierToInfoDictionary[task.taskIdentifier] = nil
+		taskToInfoDictionary[task] = nil
 
 		addDataTaskFromQueueIfNecessary()
 
@@ -386,8 +413,11 @@ private extension DownloadSession {
 			urlsInSession.removeAll()
 		}
 	}
+}
 
-	// MARK: - 429 Too Many Requests
+// MARK: - 429 Too Many Requests
+
+extension DownloadSession {
 
 	@MainActor func handle429Response(_ dataTask: URLSessionDataTask, _ response: URLResponse) {
 
@@ -399,6 +429,9 @@ private extension DownloadSession {
 		cancelAndRemoveTasksWithHost(message.host)
 	}
 
+	// Default for sites like Reddit that don’t send a value.
+	static let defaultRetryAfter: TimeInterval = 10 * 60 // 10 minutes
+
 	func createHTTPResponse429(_ dataTask: URLSessionDataTask, _ response: URLResponse) -> HTTPResponse429? {
 
 		guard let url = dataTask.currentRequest?.url ?? dataTask.originalRequest?.url else {
@@ -407,12 +440,16 @@ private extension DownloadSession {
 		guard let httpResponse = response as? HTTPURLResponse else {
 			return nil
 		}
-		guard let retryAfterValue = httpResponse.value(forHTTPHeaderField: HTTPResponseHeader.retryAfter) else {
+
+		let parsedRetryAfter: TimeInterval? = {
+			if let retryAfterValue = httpResponse.value(forHTTPHeaderField: HTTPResponseHeader.retryAfter),
+			   let parsed = TimeInterval(retryAfterValue),
+			   parsed > 0 {
+				return parsed
+			}
 			return nil
-		}
-		guard let retryAfter = TimeInterval(retryAfterValue), retryAfter > 0 else {
-			return nil
-		}
+		}()
+		let retryAfter = parsedRetryAfter ?? Self.defaultRetryAfter
 
 		return HTTPResponse429(url: url, retryAfter: retryAfter)
 	}
@@ -425,14 +462,7 @@ private extension DownloadSession {
 
 	@MainActor func cancelAndRemoveTasksWithHost(_ host: String, in tasks: Set<URLSessionTask>) {
 
-		let lowercaseHost = host.lowercased(with: localeForLowercasing)
-
-		let tasksToRemove = tasks.filter { task in
-			if let taskHost = task.lowercaseHost, taskHost.contains(lowercaseHost) {
-				return false
-			}
-			return true
-		}
+		let tasksToRemove = Self.tasksWithHost(host, in: tasks)
 
 		for task in tasksToRemove {
 			task.cancel()
@@ -442,9 +472,15 @@ private extension DownloadSession {
 		}
 	}
 
+	/// Tasks whose request host matches `host` exactly, ignoring case.
+	nonisolated static func tasksWithHost(_ host: String, in tasks: Set<URLSessionTask>) -> Set<URLSessionTask> {
+		let lowercaseHost = host.lowercased(with: localeForLowercasing)
+		return tasks.filter { $0.lowercaseHost == lowercaseHost }
+	}
+
 	func requestShouldBeDroppedDueToActive429(_ url: URL) -> Bool {
 
-		guard let host = url.host() else {
+		guard let host = url.host()?.lowercased(with: localeForLowercasing) else {
 			return false
 		}
 		guard let retryAfterMessage = retryAfterMessages[host] else {
@@ -458,6 +494,11 @@ private extension DownloadSession {
 
 		return true
 	}
+}
+
+// MARK: - Private
+
+private extension DownloadSession {
 
 	// MARK: - 400-499 responses
 
@@ -495,6 +536,7 @@ private extension DownloadSession {
 
 	// MARK: - Filtering URLs
 
+	static private let openRSSOrgMinimumRefreshInterval: TimeInterval = 60 * 60 // arbitrary
 	static private let lastOpenRSSOrgFeedRefreshKey = "lastOpenRSSOrgFeedRefresh"
 	static private var lastOpenRSSOrgFeedRefresh: Date {
 		get {
@@ -506,7 +548,7 @@ private extension DownloadSession {
 	}
 
 	static private var canDownloadFromOpenRSSOrg: Bool {
-		let okayToDownloadDate = lastOpenRSSOrgFeedRefresh + TimeInterval(60 * 60 * 10) // 10 minutes (arbitrary)
+		let okayToDownloadDate = lastOpenRSSOrgFeedRefresh + openRSSOrgMinimumRefreshInterval
 		return Date() > okayToDownloadDate
 	}
 

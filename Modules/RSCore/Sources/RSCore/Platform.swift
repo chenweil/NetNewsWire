@@ -12,7 +12,7 @@ import Security
 
 public struct Platform {
 
-	nonisolated private static let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "com.ranchero.Platform", category: "Platform")
+	nonisolated private static let logger = Logger(subsystem: Logger.nnwSubsystem, category: "Platform")
 
 	nonisolated public static var deviceHasiCloudAccount: Bool {
 		FileManager.default.ubiquityIdentityToken != nil

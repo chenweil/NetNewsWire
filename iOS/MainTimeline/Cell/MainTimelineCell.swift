@@ -47,6 +47,9 @@ final class MainTimelineCell: UICollectionViewCell {
 	}
 
 	override func preferredLayoutAttributesFitting(_ layoutAttributes: UICollectionViewLayoutAttributes) -> UICollectionViewLayoutAttributes {
+		guard layoutAttributes.frame.width > 0 else {
+			return layoutAttributes
+		}
 		let layout = updatedLayout(width: layoutAttributes.frame.width)
 		layoutAttributes.frame.size.height = layout.height
 		return layoutAttributes
@@ -69,13 +72,18 @@ final class MainTimelineCell: UICollectionViewCell {
 	override func updateConfiguration(using state: UICellConfigurationState) {
 		super.updateConfiguration(using: state)
 
-		var backgroundConfig: UIBackgroundConfiguration
-		if #available(iOS 18, *) {
-			backgroundConfig = UIBackgroundConfiguration.listCell().updated(for: state)
-		} else {
-			backgroundConfig = UIBackgroundConfiguration.listGroupedCell().updated(for: state)
-		}
-		if #available(iOS 26, *) {
+		var backgroundConfig = UIBackgroundConfiguration.listCell().updated(for: state)
+		// The Settings timeline preview isn't in the split view hierarchy, so style it
+		// the way the timeline usually looks on the device.
+		let usesExpandedStyle = isPreview ? UIDevice.current.userInterfaceIdiom == .pad : isInExpandedSplitView
+		if !usesExpandedStyle {
+			// Full-bleed rectangle selection when the timeline has the screen to itself.
+			// When the split view is expanded — iPad, or a large iPhone in landscape —
+			// it gets the rounded, inset selection below.
+			backgroundConfig.cornerRadius = 0
+			backgroundConfig.backgroundInsets = .zero
+			backgroundConfig.edgesAddingLayoutMarginsToBackgroundInsets = []
+		} else if #available(iOS 26, *) {
 			backgroundConfig.cornerRadius = 20
 			backgroundConfig.edgesAddingLayoutMarginsToBackgroundInsets = [.leading, .trailing]
 			if UIDevice.current.userInterfaceIdiom == .pad {
@@ -89,10 +97,15 @@ final class MainTimelineCell: UICollectionViewCell {
 			backgroundConfig.cornerRadius = 0
 		}
 
-		if state.isSelected {
-			backgroundConfig.backgroundColor = Assets.Colors.primaryAccent
-		} else if state.isSwiped {
+		let showsAccentSelection = isActiveSelection(state)
+
+		if state.isSwiped {
 			backgroundConfig.backgroundColor = .secondarySystemFill
+		} else if state.isSelected {
+			// When collapsed, keep the standard system selection color from updated(for: state).
+			if isInExpandedSplitView {
+				backgroundConfig.backgroundColor = showsAccentSelection ? Assets.Colors.primaryAccent : .tertiarySystemFill
+			}
 		} else {
 			backgroundConfig.backgroundColor = .clear
 		}
@@ -106,10 +119,9 @@ final class MainTimelineCell: UICollectionViewCell {
 
 		topSeparator.alpha = (isActive || isPreview) ? 0.0 : 1.0
 
-		// White foreground is only for the selected state (blue accent background).
-		// The swiped state uses a subtle gray fill, so it keeps normal label colors.
-		updateColors(active: state.isSelected)
-		updateIndicatorView(active: state.isSelected)
+		// Text goes white only on the accent background. On gray, labels keep their normal colors.
+		updateColors(active: showsAccentSelection)
+		updateIndicatorView(active: showsAccentSelection)
 	}
 
 	func setIconImage(_ image: IconImage) {
@@ -198,10 +210,16 @@ private extension MainTimelineCell {
 			iconView.isHidden = true
 		}
 
-		updateColors(active: configurationState.isSelected)
-		updateIndicatorView(active: configurationState.isSelected)
+		let active = isActiveSelection(configurationState)
+		updateColors(active: active)
+		updateIndicatorView(active: active)
 		updateAccessibilityLabel()
 		setNeedsLayout()
+	}
+
+	/// Matches the feeds list: accent background (and white text) when the timeline is first responder, gray otherwise.
+	func isActiveSelection(_ state: UICellConfigurationState) -> Bool {
+		state.isSelected && isInExpandedSplitView && enclosingViewController?.isFirstResponder == true
 	}
 
 	func updateColors(active: Bool) {

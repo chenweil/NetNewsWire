@@ -54,8 +54,8 @@ final class CloudKitArticlesZoneDelegate: CloudKitZoneDelegate {
 		accumulatedChangedCount += changed.count
 		accumulatedDeletedCount += deleted.count
 
-		let pendingReadStatusArticleIDs = await syncDatabase.selectPendingReadStatusArticleIDs() ?? Set<String>()
-		let pendingStarredStatusArticleIDs = await syncDatabase.selectPendingStarredStatusArticleIDs() ?? Set<String>()
+		let pendingReadStatusArticleIDs = (try? await syncDatabase.selectPendingReadStatusArticleIDs()) ?? Set<String>()
+		let pendingStarredStatusArticleIDs = (try? await syncDatabase.selectPendingStarredStatusArticleIDs()) ?? Set<String>()
 
 		await delete(recordKeys: deleted, pendingStarredStatusArticleIDs: pendingStarredStatusArticleIDs)
 		await update(records: changed,
@@ -167,6 +167,7 @@ nonisolated func makeParsedItem(_ articleRecord: CKRecord) -> ParsedItem? {
 								markdown: nil,
 								summary: articleRecord[CloudKitArticlesZone.CloudKitArticle.Fields.summary] as? String,
 								imageURL: articleRecord[CloudKitArticlesZone.CloudKitArticle.Fields.imageURL] as? String,
+								thumbnailURL: nil,
 								bannerImageURL: articleRecord[CloudKitArticlesZone.CloudKitArticle.Fields.imageURL] as? String,
 								datePublished: articleRecord[CloudKitArticlesZone.CloudKitArticle.Fields.datePublished] as? Date,
 								dateModified: articleRecord[CloudKitArticlesZone.CloudKitArticle.Fields.dateModified] as? Date,

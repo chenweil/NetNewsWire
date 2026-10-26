@@ -60,8 +60,8 @@ import RSParser
 		let account = accountAndFolderSpecifier.account
 		let resolvedURL = RSSHubResolver().resolvedURL(for: url.absoluteString) ?? url
 
-		if account.hasFeed(withURL: resolvedURL.absoluteString) {
-			showAlreadySubscribedError(resolvedURL.absoluteString)
+		if let existingFeed = account.existingFeed(withURL: resolvedURL.absoluteString) {
+			showAlreadySubscribedError(existingFeed, account: account)
 			return
 		}
 
@@ -106,7 +106,7 @@ import RSParser
 				}
 				switch presentedError {
 				case AccountError.createErrorAlreadySubscribed:
-					self.showAlreadySubscribedError(resolvedURL.absoluteString)
+					self.showAlreadySubscribedError(account.existingFeed(withURL: resolvedURL.absoluteString), account: account)
 				case AccountError.createErrorNotFound:
 					self.showNoFeedsErrorMessage()
 				default:
@@ -156,12 +156,31 @@ private extension AddFeedController {
 
 	// MARK: - Errors
 
-	func showAlreadySubscribedError(_ urlString: String) {
+	func showAlreadySubscribedError(_ feed: Feed?, account: Account) {
 		let alert = NSAlert()
 		alert.alertStyle = .informational
-		alert.messageText = NSLocalizedString("Already subscribed", comment: "Feed finder")
-		alert.informativeText = NSLocalizedString("Can’t add this feed because you’ve already subscribed to it.", comment: "Feed finder")
+		alert.messageText = NSLocalizedString("Already added", comment: "Feed finder")
+		alert.informativeText = alreadySubscribedErrorText(feed, account: account)
 		alert.beginSheetModal(for: hostWindow)
+	}
+
+	func alreadySubscribedErrorText(_ feed: Feed?, account: Account) -> String {
+		let genericText = NSLocalizedString("Can’t add this feed because you’ve already added it.", comment: "Feed finder")
+
+		guard let feed else {
+			return genericText
+		}
+
+		let folderNames = account.existingContainers(withFeed: feed)
+			.compactMap { ($0 as? Folder)?.nameForDisplay }
+			.sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+		if folderNames.isEmpty {
+			return genericText
+		}
+
+		let quotedNames = folderNames.map { "“\($0)”" }
+		let formatString = NSLocalizedString("Can’t add this feed because you’ve already added it in %@.", comment: "Feed finder")
+		return NSString.localizedStringWithFormat(formatString as NSString, quotedNames.formatted(.list(type: .and))) as String
 	}
 
 	func showInitialDownloadError(_ error: Error) {
@@ -178,7 +197,7 @@ private extension AddFeedController {
 	func showNoFeedsErrorMessage() {
 		let alert = NSAlert()
 		alert.alertStyle = .informational
-		alert.messageText = NSLocalizedString("Feed not found", comment: "Feed finder")
+		alert.messageText = NSLocalizedString("Unable to Add Feed", comment: "Feed finder")
 		alert.informativeText = NSLocalizedString("Can’t add a feed because no feed was found.", comment: "Feed finder")
 		alert.beginSheetModal(for: hostWindow)
 	}

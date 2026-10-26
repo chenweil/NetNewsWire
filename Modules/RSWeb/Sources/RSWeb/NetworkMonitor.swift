@@ -7,7 +7,7 @@
 
 import Foundation
 import Network
-import os
+import Synchronization
 
 nonisolated public final class NetworkMonitor: Sendable {
 	public static let shared = NetworkMonitor()
@@ -16,16 +16,18 @@ nonisolated public final class NetworkMonitor: Sendable {
 	private let queue = DispatchQueue(label: "RSWeb NetworkMonitor")
 
 	private struct State: Sendable {
-		var isConnected = false
+		var isConnected: Bool?
 		var connectionType: NWInterface.InterfaceType?
 		var isExpensive = false
 		var isConstrained = false
 	}
 
-	private let state = OSAllocatedUnfairLock<State>(initialState: State())
+	private let state = Mutex(State())
 
+	/// `true` until `NWPathMonitor` delivers its first path, so callers attempt
+	/// network work rather than skip it on an answer we don't have yet.
 	public var isConnected: Bool {
-		state.withLock { $0.isConnected }
+		state.withLock { $0.isConnected ?? true }
 	}
 
 	public var connectionType: NWInterface.InterfaceType? {

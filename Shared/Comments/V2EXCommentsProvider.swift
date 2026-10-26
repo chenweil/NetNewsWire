@@ -23,7 +23,7 @@ struct V2EXCommentsProvider: CommentsProvider {
 	/// Session used for network requests. Injectable so tests can stub it.
 	let session: URLSession
 
-	init(session: URLSession = .webservice) {
+	init(session: URLSession = .makeWebserviceSession()) {
 		self.session = session
 	}
 

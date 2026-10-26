@@ -44,7 +44,7 @@ enum CommentsHTMLRenderer {
 	/// The article text size class, which the theme turns into a font size.
 	private static var articleSizeClass: String {
 		#if os(macOS)
-		return AppDefaults.shared.articleTextSize.cssClass
+		return AppDefaults.articleTextSize.cssClass
 		#else
 		return ""
 		#endif

@@ -25,9 +25,17 @@ extension Notification.Name {
 
 @objc final class SidebarViewController: NSViewController, NSOutlineViewDelegate, NSMenuDelegate, UndoableCommandRunner {
 
-	@IBOutlet var outlineView: NSOutlineView!
+	@IBOutlet var outlineView: SidebarOutlineView!
+	@IBOutlet var progressView: SidebarProgressView?
 
 	weak var delegate: SidebarDelegate?
+
+	/// False when the main window status bar takes over refresh progress.
+	var showsProgressView = true {
+		didSet {
+			progressView?.isSuppressed = !showsProgressView
+		}
+	}
 
 	weak var splitViewItem: NSSplitViewItem?
 
@@ -65,11 +73,27 @@ extension Notification.Name {
 		return selectedNodes.representedObjects()
 	}
 
+	var selectedContainer: Container? {
+		for node in selectedNodes {
+			if let container = containerForNode(node) {
+				return container
+			}
+		}
+		return nil
+	}
+
 	private static let rowViewIdentifier = NSUserInterfaceItemIdentifier(rawValue: "sidebarRow")
+	private let keyboardDelegate = SidebarKeyboardDelegate()
 
 	// MARK: - NSViewController
 
+	convenience init() {
+		self.init(nibName: "SidebarView", bundle: nil)
+	}
+
 	override func viewDidLoad() {
+		progressView?.isSuppressed = !showsProgressView
+		outlineView.keyboardDelegate = keyboardDelegate
 		outlineView.dataSource = dataSource
 		outlineView.doubleAction = #selector(doubleClickedSidebar(_:))
 		outlineView.setDraggingSourceOperationMask([.move, .copy], forLocal: true)
@@ -77,6 +101,7 @@ extension Notification.Name {
 
 		NotificationCenter.default.addObserver(self, selector: #selector(unreadCountDidInitialize(_:)), name: .UnreadCountDidInitialize, object: nil)
 		NotificationCenter.default.addObserver(self, selector: #selector(unreadCountDidChange(_:)), name: .UnreadCountDidChange, object: nil)
+		NotificationCenter.default.addObserver(self, selector: #selector(handleUnreadCountDisplaySettingDidChange(_:)), name: .unreadCountDisplaySettingDidChange, object: nil)
 		NotificationCenter.default.addObserver(self, selector: #selector(containerChildrenDidChange(_:)), name: .ChildrenDidChange, object: nil)
 		NotificationCenter.default.addObserver(self, selector: #selector(accountsDidChange(_:)), name: .UserDidAddAccount, object: nil)
 		NotificationCenter.default.addObserver(self, selector: #selector(accountsDidChange(_:)), name: .UserDidDeleteAccount, object: nil)
@@ -88,6 +113,11 @@ extension Notification.Name {
 		NotificationCenter.default.addObserver(self, selector: #selector(feedSettingDidChange(_:)), name: .feedSettingDidChange, object: nil)
 		NotificationCenter.default.addObserver(self, selector: #selector(displayNameDidChange(_:)), name: .DisplayNameDidChange, object: nil)
 		DistributedNotificationCenter.default().addObserver(self, selector: #selector(appleSideBarDefaultIconSizeChanged(_:)), name: .appleSideBarDefaultIconSizeChanged, object: nil)
+
+		if let clipView = outlineView.enclosingScrollView?.contentView {
+			clipView.postsFrameChangedNotifications = true
+			NotificationCenter.default.addObserver(self, selector: #selector(handleClipViewFrameDidChange(_:)), name: NSView.frameDidChangeNotification, object: clipView)
+		}
 
 		outlineView.reloadData()
 
@@ -210,6 +240,16 @@ extension Notification.Name {
 		}
 	}
 
+	@objc func handleUnreadCountDisplaySettingDidChange(_ notification: Notification) {
+		applyToAvailableCells { cell, _ in
+			cell.updateUnreadCountView()
+		}
+	}
+
+	@objc func handleClipViewFrameDidChange(_ notification: Notification) {
+		fitOutlineViewToVisibleWidth()
+	}
+
 	@objc func containerChildrenDidChange(_ note: Notification) {
 		rebuildTreeAndRestoreSelection()
 	}
@@ -299,7 +339,7 @@ extension Notification.Name {
 		guard outlineView.clickedRow == outlineView.selectedRow else {
 			return
 		}
-		if AppDefaults.shared.feedDoubleClickMarkAsRead, let articles = singleSelectedFeed?.fetchUnreadArticles() {
+		if AppDefaults.feedDoubleClickMarkAsRead, let articles = singleSelectedFeed?.fetchUnreadArticles() {
 			if let undoManager = undoManager, let markReadCommand = MarkStatusCommand(initialArticles: Array(articles), markingRead: true, undoManager: undoManager) {
 				runCommand(markReadCommand)
 			}
@@ -550,6 +590,22 @@ extension SidebarViewController: NSUserInterfaceValidations {
 
 private extension SidebarViewController {
 
+	/// The outline view doesn’t resize its rows when the scroller appears or disappears,
+	/// which leaves the selection highlight at a stale width.
+	/// <https://github.com/Ranchero-Software/NetNewsWire/issues/5487>
+	func fitOutlineViewToVisibleWidth() {
+		guard let scrollView = outlineView.enclosingScrollView else {
+			return
+		}
+		let contentInsets = scrollView.contentInsets
+		let visibleWidth = scrollView.contentView.bounds.width - contentInsets.left - contentInsets.right
+		guard visibleWidth > 0, outlineView.frame.width != visibleWidth else {
+			return
+		}
+		outlineView.setFrameSize(NSSize(width: visibleWidth, height: outlineView.frame.height))
+		outlineView.sizeLastColumnToFit()
+	}
+
 	var accountNodes: [Account] {
 		return treeController.rootNode.childNodes.compactMap { $0.representedObject as? Account }
 	}
@@ -577,6 +633,16 @@ private extension SidebarViewController {
 			return nil
 		}
 		return node.representedObject as? Feed
+	}
+
+	func containerForNode(_ node: Node) -> Container? {
+		if let container = node.representedObject as? Container {
+			return container
+		}
+		if node.representedObject is Feed {
+			return node.parent?.representedObject as? Container
+		}
+		return nil
 	}
 
 	func addAllSelectedToFilterExceptions() {
@@ -753,11 +819,9 @@ private extension SidebarViewController {
 	}
 
 	func shouldSkipRow(_ row: Int) -> Bool {
-		let skipExpandedFolders = UserDefaults.standard.bool(forKey: "JalkutRespectFolderExpansionOnNextUnread")
-
 		// Skip group items, because they should never be selected.
-		// Skip expanded folders only if Jalkut's pref is enabled.
-		if  rowIsGroupItem(row) || (skipExpandedFolders && rowIsExpandedFolder(row)) {
+		// Skip expanded folders — go to the feeds inside instead.
+		if rowIsGroupItem(row) || rowIsExpandedFolder(row) {
 			return true
 		}
 		return false
@@ -820,6 +884,7 @@ private extension SidebarViewController {
 		cell.cellAppearance = SidebarCellAppearance(rowSizeStyle: outlineView.effectiveRowSizeStyle)
 		cell.name = nameFor(node)
 		configureUnreadCount(cell, node)
+		cell.updateUnreadCountView() // A reused cell may predate a display setting change
 		configureFavicon(cell, node)
 		cell.shouldShowImage = node.representedObject is SmallIconProvider
 	}

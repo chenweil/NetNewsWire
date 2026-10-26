@@ -7,13 +7,15 @@
 //
 
 import Foundation
+import RSCore
 import os
+import Synchronization
 import Account
 
 final class ExtensionFeedAddRequestFile: NSObject, NSFilePresenter, Sendable {
 	static let shared = ExtensionFeedAddRequestFile()
 
-	static private let logger = Logger(subsystem: Bundle.main.bundleIdentifier!, category: "ExtensionFeedAddRequestFile")
+	static private let logger = Logger(subsystem: Logger.nnwSubsystem, category: "ExtensionFeedAddRequestFile")
 
 	private static let filePath: String = {
 		let appGroup = Bundle.main.object(forInfoDictionaryKey: "AppGroup") as! String
@@ -35,7 +37,7 @@ final class ExtensionFeedAddRequestFile: NSObject, NSFilePresenter, Sendable {
 		operationQueue
 	}
 
-	private let didStart = OSAllocatedUnfairLock(initialState: false)
+	private let didStart = Mutex(false)
 
 	func start() {
 		let alreadyStarted = didStart.withLock { didStart -> Bool in

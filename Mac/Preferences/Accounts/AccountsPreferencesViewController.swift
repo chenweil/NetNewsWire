@@ -27,8 +27,13 @@ final class AccountsPreferencesViewController: NSViewController {
 	var addAccountsViewController: NSHostingController<AddAccountsView>?
 
 	private var sortedAccounts = [Account]()
+	private var isReloadingTable = false
 	private var selectedAccount: Account? {
 		account(at: tableView.selectedRow)
+	}
+
+	convenience init() {
+		self.init(nibName: "AccountsPreferencesView", bundle: nil)
 	}
 
 	override func viewDidLoad() {
@@ -68,9 +73,10 @@ final class AccountsPreferencesViewController: NSViewController {
 
 		let alert = NSAlert()
 		alert.alertStyle = .warning
-		let deletePrompt = NSLocalizedString("Delete", comment: "Delete button")
-		alert.messageText = "\(deletePrompt) “\(accountName)”?"
-		alert.informativeText = NSLocalizedString("Are you sure you want to delete the account “\(accountName)”? This cannot be undone.", comment: "Delete text")
+		let messageFormat = NSLocalizedString("Delete “%@”?", comment: "Delete account alert title")
+		alert.messageText = String(format: messageFormat, accountName)
+		let informativeFormat = NSLocalizedString("Are you sure you want to delete the account “%@”? This cannot be undone.", comment: "Delete account alert message")
+		alert.informativeText = String(format: informativeFormat, accountName)
 
 		alert.addButton(withTitle: NSLocalizedString("Delete", comment: "Delete button"))
 		alert.addButton(withTitle: NSLocalizedString("Cancel", comment: "Cancel button"))
@@ -90,13 +96,15 @@ final class AccountsPreferencesViewController: NSViewController {
 	}
 
 	@objc func displayNameDidChange(_ note: Notification) {
-		updateSortedAccounts()
-		tableView.reloadData()
+		reloadTablePreservingSelection()
 	}
 
 	@objc func accountsDidChange(_ note: Notification) {
-		updateSortedAccounts()
-		tableView.reloadData()
+		if note.name == .UserDidAddAccount, let addedAccount = note.userInfo?[Account.UserInfoKey.account] as? Account {
+			reloadTable(selecting: addedAccount)
+		} else {
+			reloadTablePreservingSelection()
+		}
 	}
 
 	@objc func handleAccountRefreshStateChanged(_ note: Notification) {
@@ -142,12 +150,11 @@ extension AccountsPreferencesViewController: NSTableViewDelegate {
 	func tableViewSelectionDidChange(_ notification: Notification) {
 		updateDeleteButtonState()
 
-		if let selectedAccount {
-			let controller = AccountsDetailViewController(account: selectedAccount)
-			showController(controller)
-		} else {
-			hideController()
+		// A reload can report its selection more than once, so reloadTable(selecting:) updates the detail view when it settles.
+		if isReloadingTable {
+			return
 		}
+		updateDetailView()
 	}
 }
 
@@ -168,10 +175,8 @@ extension AccountsPreferencesViewController: AccountsPreferencesAddAccountDelega
 			let accountsAddCloudKitWindowController = AccountsAddCloudKitWindowController()
 			addAccountWindowController = accountsAddCloudKitWindowController
 			Task { @MainActor in
-				if let response = await accountsAddCloudKitWindowController.runSheetOnWindow(window),
-				   response == .OK {
-					tableView.reloadData()
-				}
+				// No reload needed on OK — createAccount posts UserDidAddAccount, which reloads the table.
+				_ = await accountsAddCloudKitWindowController.runSheetOnWindow(window)
 			}
 
 		case .feedbin:
@@ -239,6 +244,39 @@ private extension AccountsPreferencesViewController {
 		sortedAccounts = AccountManager.shared.sortedAccounts
 	}
 
+	func reloadTablePreservingSelection() {
+		reloadTable(selecting: selectedAccount)
+	}
+
+	func reloadTable(selecting accountToSelect: Account?) {
+		updateSortedAccounts()
+
+		isReloadingTable = true
+		tableView.reloadData()
+		if let accountToSelect, let row = sortedAccounts.firstIndex(of: accountToSelect) {
+			tableView.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
+		}
+		isReloadingTable = false
+
+		updateDeleteButtonState()
+		updateDetailView()
+	}
+
+	/// Reuses the existing detail view controller when it's already showing the selected account, so an in-progress edit isn't destroyed.
+	func updateDetailView() {
+		guard let selectedAccount else {
+			hideController()
+			return
+		}
+
+		let accountShowingInDetailView = (children.first as? AccountsDetailViewController)?.account
+		if accountShowingInDetailView == selectedAccount {
+			return
+		}
+
+		showController(AccountsDetailViewController(account: selectedAccount))
+	}
+
 	func updateDeleteButtonState() {
 		guard let selectedAccount else {
 			deleteButton.isEnabled = false
@@ -299,13 +337,7 @@ extension AccountsPreferencesViewController: OAuthAccountAuthorizationOperationD
 		// because the user probably wants to see the result of authorizing NetNewsWire to act on their behalf.
 		NSApp.activate(ignoringOtherApps: true)
 
-		Task { @MainActor in
-			do {
-				try await account.refreshAll()
-			} catch {
-				presentError(error)
-			}
-		}
+		account.triggerRefreshAll()
 	}
 
 	func oauthAccountAuthorizationOperation(_ operation: OAuthAccountAuthorizationOperation, didFailWith error: Error) {

@@ -54,7 +54,7 @@ enum AddAccountSections: Int, CaseIterable {
 		case .icloud:
 			return [.cloudKit]
 		case .web:
-			if AppDefaults.shared.isDeveloperBuild {
+			if AppDefaults.isDeveloperBuild {
 				return [.bazQux, .feedbin, .feedly, .inoreader, .newsBlur, .theOldReader].filter({ $0.isDeveloperRestricted == false })
 			} else {
 				return [.bazQux, .feedbin, .feedly, .inoreader, .newsBlur, .theOldReader]
@@ -89,7 +89,7 @@ struct AddAccountsView: View {
 
 			localAccount
 
-			if !AppDefaults.shared.isDeveloperBuild {
+			if !AppDefaults.isDeveloperBuild {
 				icloudAccount
 			}
 
@@ -136,7 +136,7 @@ struct AddAccountsView: View {
 					HStack(alignment: .center) {
 						account.image()
 							.resizable()
-							.aspectRatio(contentMode: .fit)
+							.scaledToFit()
 							.frame(width: 20, height: 20, alignment: .center)
 							.padding(.leading, 4)
 						Text(account.displayName)
@@ -168,7 +168,7 @@ struct AddAccountsView: View {
 					HStack(alignment: .center) {
 						account.image()
 							.resizable()
-							.aspectRatio(contentMode: .fit)
+							.scaledToFit()
 							.frame(width: 20, height: 20, alignment: .center)
 							.padding(.leading, 4)
 
@@ -204,7 +204,7 @@ struct AddAccountsView: View {
 								HStack(alignment: .center) {
 									account.image()
 										.resizable()
-										.aspectRatio(contentMode: .fit)
+										.scaledToFit()
 										.frame(width: 20, height: 20, alignment: .center)
 										.padding(.leading, 4)
 									Text(account.displayName)
@@ -238,7 +238,7 @@ struct AddAccountsView: View {
 					HStack(alignment: .center) {
 						account.image()
 							.resizable()
-							.aspectRatio(contentMode: .fit)
+							.scaledToFit()
 							.frame(width: 20, height: 20, alignment: .center)
 							.padding(.leading, 4)
 

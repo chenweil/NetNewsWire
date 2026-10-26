@@ -14,6 +14,8 @@ nonisolated public struct SpecialCase {
 	public static let rachelByTheBayHostName = "rachelbythebay.com"
 	public static let openRSSOrgHostName = "openrss.org"
 	public static let youtubeHostName = "youtube.com"
+	public static let redditHostName = "reddit.com"
+	public static let relayFMHostName = "relay.fm"
 
 	public static func urlStringContainSpecialCase(_ urlString: String, _ specialCases: [String]) -> Bool {
 		let lowerURLString = urlString.lowercased(with: localeForLowercasing)
@@ -74,10 +76,21 @@ nonisolated extension URL {
 	}
 
 	public var isYoutubeURL: Bool {
-		guard let host = host() else {
+		SpecialCase.urlStringMatchesDomain(absoluteString, [SpecialCase.youtubeHostName])
+	}
+
+	public var isRedditURL: Bool {
+		SpecialCase.urlStringMatchesDomain(absoluteString, [SpecialCase.redditHostName])
+	}
+
+	/// The Relay FM blog, specifically — not the whole relay.fm domain (its root advertises the master
+	/// podcast feed). Matches the /blog index and /blog/<post> pages.
+	public var isRelayFMBlogURL: Bool {
+		guard SpecialCase.urlStringMatchesDomain(absoluteString, [SpecialCase.relayFMHostName]) else {
 			return false
 		}
-		return SpecialCase.urlStringContainSpecialCase(host, [SpecialCase.youtubeHostName])
+		let path = path()
+		return path == "/blog" || path.hasPrefix("/blog/")
 	}
 }
 

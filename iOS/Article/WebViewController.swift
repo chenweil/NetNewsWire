@@ -26,6 +26,7 @@ final class WebViewController: UIViewController {
 		static let imageWasClicked = "imageWasClicked"
 		static let imageWasShown = "imageWasShown"
 		static let showFeedInspector = "showFeedInspector"
+		static let mediaSourceURLs = "mediaSourceURLs"
 	}
 
 	private var topShowBarsView: UIView!
@@ -37,12 +38,16 @@ final class WebViewController: UIViewController {
 		return view.subviews[0] as? PreloadedWebView
 	}
 
+	private var webViewProcessDidTerminate = false
+
 	private lazy var contextMenuInteraction = UIContextMenuInteraction(delegate: self)
 	private var isFullScreenAvailable: Bool {
-		return AppDefaults.shared.articleFullscreenAvailable && traitCollection.userInterfaceIdiom == .phone
+		return AppDefaults.articleFullscreenAvailable && traitCollection.userInterfaceIdiom == .phone
 	}
 	private lazy var articleIconSchemeHandler = ArticleIconSchemeHandler(coordinator: coordinator)
 	private lazy var transition = ImageTransition(controller: self)
+	private var imageDownloadTask: Task<Void, Never>?
+	private var mediaSourceURLs = Set<String>()
 	private var clickedImageCompletion: (() -> Void)?
 
 	private var articleExtractor: ArticleExtractor?
@@ -53,8 +58,8 @@ final class WebViewController: UIViewController {
 	}
 	var isShowingExtractedArticle = false {
 		didSet {
-			if AppDefaults.shared.isShowingExtractedArticle != isShowingExtractedArticle {
-				AppDefaults.shared.isShowingExtractedArticle = isShowingExtractedArticle
+			if AppDefaults.isShowingExtractedArticle != isShowingExtractedArticle {
+				AppDefaults.isShowingExtractedArticle = isShowingExtractedArticle
 			}
 		}
 	}
@@ -73,12 +78,13 @@ final class WebViewController: UIViewController {
 	let scrollPositionQueue = CoalescingQueue(name: "Article Scroll Position", interval: 0.3, maxInterval: 0.3)
 	var windowScrollY = 0 {
 		didSet {
-			if windowScrollY != AppDefaults.shared.articleWindowScrollY {
-				AppDefaults.shared.articleWindowScrollY = windowScrollY
+			if windowScrollY != AppDefaults.articleWindowScrollY {
+				AppDefaults.articleWindowScrollY = windowScrollY
 			}
 		}
 	}
 	private var restoreWindowScrollY: Int?
+	private var isArticleContentJavascriptEnabled = AppDefaults.isArticleContentJavascriptEnabled
 
 	override func viewDidLoad() {
 		super.viewDidLoad()
@@ -88,6 +94,7 @@ final class WebViewController: UIViewController {
 		NotificationCenter.default.addObserver(self, selector: #selector(faviconDidBecomeAvailable(_:)), name: .FaviconDidBecomeAvailable, object: nil)
 		NotificationCenter.default.addObserver(self, selector: #selector(currentArticleThemeDidChangeNotification(_:)), name: .CurrentArticleThemeDidChangeNotification, object: nil)
 		NotificationCenter.default.addObserver(self, selector: #selector(handleSceneDidEnterBackground(_:)), name: UIScene.didEnterBackgroundNotification, object: nil)
+		NotificationCenter.default.addObserver(self, selector: #selector(handleUserDefaultsDidChange(_:)), name: UserDefaults.didChangeNotification, object: nil)
 
 		// Configure the tap zones
 		configureTopShowBarsView()
@@ -98,7 +105,7 @@ final class WebViewController: UIViewController {
 
 	override func viewSafeAreaInsetsDidChange() {
 		super.viewSafeAreaInsetsDidChange()
-		if isFullScreenAvailable && AppDefaults.shared.logicalArticleFullscreenEnabled {
+		if isFullScreenAvailable && AppDefaults.logicalArticleFullscreenEnabled {
 			updateBottomSafeAreaForFullScreen()
 		}
 	}
@@ -138,6 +145,20 @@ final class WebViewController: UIViewController {
 		loadWebView()
 	}
 
+	@objc nonisolated func handleUserDefaultsDidChange(_ note: Notification) {
+		Task { @MainActor in
+			self.userDefaultsDidChange()
+		}
+	}
+
+	private func userDefaultsDidChange() {
+		guard isArticleContentJavascriptEnabled != AppDefaults.isArticleContentJavascriptEnabled else {
+			return
+		}
+		isArticleContentJavascriptEnabled = AppDefaults.isArticleContentJavascriptEnabled
+		loadWebView()
+	}
+
 	// MARK: Actions
 
 	@objc func showBars(_ sender: Any) {
@@ -151,6 +172,9 @@ final class WebViewController: UIViewController {
 
 		if article != self.article {
 			self.article = article
+			// A restoration offset belongs only to the article it was saved for.
+			// <https://github.com/Ranchero-Software/NetNewsWire/issues/5243>
+			restoreWindowScrollY = nil
 			if updateView {
 				if article?.feed?.readerViewAlwaysEnabled == true {
 					startArticleExtractor()
@@ -236,7 +260,7 @@ final class WebViewController: UIViewController {
 	}
 
 	func showBars(animated: Bool = true) {
-		AppDefaults.shared.articleFullscreenEnabled = false
+		AppDefaults.articleFullscreenEnabled = false
 		coordinator.showStatusBar()
 		topShowBarsViewConstraint?.constant = 0
 		bottomShowBarsViewConstraint?.constant = 0
@@ -249,7 +273,7 @@ final class WebViewController: UIViewController {
 
 	func hideBars() {
 		if isFullScreenAvailable {
-			AppDefaults.shared.articleFullscreenEnabled = true
+			AppDefaults.articleFullscreenEnabled = true
 			coordinator.hideStatusBar()
 			topShowBarsViewConstraint?.constant = -44.0
 			bottomShowBarsViewConstraint?.constant = 44.0
@@ -298,7 +322,23 @@ final class WebViewController: UIViewController {
 	}
 
 	func stopWebViewActivity() {
-		if let webView = webView {
+		imageDownloadTask?.cancel()
+		imageDownloadTask = nil
+		guard let webView = webView else {
+			return
+		}
+		// Resetting iframe src during an element-fullscreen transition triggers a WebKit
+		// RELEASE_ASSERT. Exit fullscreen first.
+		// <https://github.com/Ranchero-Software/NetNewsWire/issues/5382>
+		if webView.fullscreenState != .notInFullscreen {
+			webView.closeAllMediaPresentations { [weak self] in
+				guard let self else {
+					return
+				}
+				self.stopMediaPlayback(webView)
+				self.cancelImageLoad(webView)
+			}
+		} else {
 			stopMediaPlayback(webView)
 			cancelImageLoad(webView)
 		}
@@ -313,7 +353,7 @@ final class WebViewController: UIViewController {
 
 	func openInAppBrowser() {
 		guard let url = article?.preferredURL else { return }
-		if AppDefaults.shared.useSystemBrowser {
+		if AppDefaults.useSystemBrowser {
 			UIApplication.shared.open(url, options: [:])
 		} else {
 			openURLInSafariViewController(url)
@@ -326,21 +366,26 @@ final class WebViewController: UIViewController {
 extension WebViewController: ArticleExtractorDelegate {
 
 	func articleExtractionDidFail(with: Error) {
+		guard articleExtractor != nil else {
+			return
+		}
 		stopArticleExtractor()
 		articleExtractorButtonState = .error
 		loadWebView()
 	}
 
 	func articleExtractionDidComplete(extractedArticle: ExtractedArticle) {
-		if articleExtractor?.state != .cancelled {
-			self.extractedArticle = extractedArticle
-			if let restoreWindowScrollY = restoreWindowScrollY {
-				windowScrollY = restoreWindowScrollY
-			}
-			isShowingExtractedArticle = true
-			loadWebView()
-			articleExtractorButtonState = .on
+		guard let articleExtractor, articleExtractor.state != .cancelled else {
+			return
 		}
+		self.extractedArticle = extractedArticle
+		if let restoreWindowScrollY = restoreWindowScrollY {
+			windowScrollY = restoreWindowScrollY
+			self.restoreWindowScrollY = nil
+		}
+		isShowingExtractedArticle = true
+		loadWebView()
+		articleExtractorButtonState = .on
 	}
 
 }
@@ -402,18 +447,28 @@ extension WebViewController: WKNavigationDelegate {
 		}
 	}
 
-	func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping @MainActor @Sendable (WKNavigationActionPolicy) -> Void) {
+	func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, preferences: WKWebpagePreferences, decisionHandler: @escaping @MainActor @Sendable (WKNavigationActionPolicy, WKWebpagePreferences) -> Void) {
+
+		preferences.allowsContentJavaScript = WebViewConfiguration.allowsContentJavaScript(for: article)
 
 		if navigationAction.navigationType == .linkActivated {
 			guard let url = navigationAction.request.url else {
-				decisionHandler(.allow)
+				decisionHandler(.allow, preferences)
+				return
+			}
+
+			// WebKit reports a tap on a not-yet-loaded video’s controls as a link activation
+			// targeting the media source. The tap already operates the control — don’t open a browser.
+			// <https://github.com/Ranchero-Software/NetNewsWire/issues/3788>
+			if mediaSourceURLs.contains(url.absoluteString) {
+				decisionHandler(.cancel, preferences)
 				return
 			}
 
 			let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
 			if components?.scheme == "http" || components?.scheme == "https" {
-				decisionHandler(.cancel)
-				if AppDefaults.shared.useSystemBrowser {
+				decisionHandler(.cancel, preferences)
+				if AppDefaults.useSystemBrowser {
 					UIApplication.shared.open(url, options: [:])
 				} else {
 					UIApplication.shared.open(url, options: [.universalLinksOnly: true]) { didOpen in
@@ -425,7 +480,7 @@ extension WebViewController: WKNavigationDelegate {
 				}
 
 			} else if components?.scheme == "mailto" {
-				decisionHandler(.cancel)
+				decisionHandler(.cancel, preferences)
 
 				guard let emailAddress = url.percentEncodedEmailAddress else {
 					return
@@ -439,21 +494,22 @@ extension WebViewController: WKNavigationDelegate {
 					self.present(alert, animated: true, completion: nil)
 				}
 			} else if components?.scheme == "tel" {
-				decisionHandler(.cancel)
+				decisionHandler(.cancel, preferences)
 
 				if UIApplication.shared.canOpenURL(url) {
 					UIApplication.shared.open(url, options: [.universalLinksOnly: false], completionHandler: nil)
 				}
 
 			} else {
-				decisionHandler(.allow)
+				decisionHandler(.allow, preferences)
 			}
 		} else {
-			decisionHandler(.allow)
+			decisionHandler(.allow, preferences)
 		}
 	}
 
 	func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+		webViewProcessDidTerminate = true
 		fullReload()
 	}
 
@@ -495,26 +551,13 @@ extension WebViewController: WKScriptMessageHandler {
 			if let feed = article?.feed {
 				coordinator.showFeedInspector(for: feed)
 			}
+		case MessageName.mediaSourceURLs:
+			mediaSourceURLs = Set((message.body as? [String]) ?? [])
 		default:
 			return
 		}
 	}
 
-}
-
-// MARK: UIViewControllerTransitioningDelegate
-
-extension WebViewController: UIViewControllerTransitioningDelegate {
-
-	func animationController(forPresented presented: UIViewController, presenting: UIViewController, source: UIViewController) -> UIViewControllerAnimatedTransitioning? {
-		transition.presenting = true
-		return transition
-	}
-
-	func animationController(forDismissed dismissed: UIViewController) -> UIViewControllerAnimatedTransitioning? {
-		transition.presenting = false
-		return transition
-	}
 }
 
 // MARK:
@@ -526,8 +569,14 @@ extension WebViewController: UIScrollViewDelegate {
 	}
 
 	@objc func scrollPositionDidChange() {
+		let articleIDWhenAsked = article?.articleID
 		webView?.evaluateJavaScript("window.scrollY") { (scrollY, error) in
 			guard error == nil else { return }
+			// A late callback must not record the previous article’s offset.
+			// <https://github.com/Ranchero-Software/NetNewsWire/issues/5243>
+			guard articleIDWhenAsked == self.article?.articleID else {
+				return
+			}
 			let javascriptScrollY = scrollY as? Int ?? 0
 			// I don't know why this value gets returned sometimes, but it is in error
 			guard javascriptScrollY != 33554432 else { return }
@@ -554,10 +603,14 @@ private extension WebViewController {
 	func loadWebView(replaceExistingWebView: Bool = false) {
 		guard isViewLoaded else { return }
 
-		if !replaceExistingWebView, let webView = webView {
+		// Never render into a web view whose content process died — the load
+		// can fail silently, leaving the article view blank.
+		if !replaceExistingWebView, !webViewProcessDidTerminate, let webView = webView {
 			self.renderPage(webView)
 			return
 		}
+
+		webViewProcessDidTerminate = false
 
 		coordinator.webViewProvider.dequeueWebView { webView in
 
@@ -593,11 +646,13 @@ private extension WebViewController {
 				webView.configuration.userContentController.removeScriptMessageHandler(forName: MessageName.imageWasClicked)
 				webView.configuration.userContentController.removeScriptMessageHandler(forName: MessageName.imageWasShown)
 				webView.configuration.userContentController.removeScriptMessageHandler(forName: MessageName.showFeedInspector)
+				webView.configuration.userContentController.removeScriptMessageHandler(forName: MessageName.mediaSourceURLs)
 
 				// Add handlers
 				webView.configuration.userContentController.add(WrapperScriptMessageHandler(self), name: MessageName.imageWasClicked)
 				webView.configuration.userContentController.add(WrapperScriptMessageHandler(self), name: MessageName.imageWasShown)
 				webView.configuration.userContentController.add(WrapperScriptMessageHandler(self), name: MessageName.showFeedInspector)
+				webView.configuration.userContentController.add(WrapperScriptMessageHandler(self), name: MessageName.mediaSourceURLs)
 
 				self.renderPage(webView)
 			}
@@ -606,6 +661,17 @@ private extension WebViewController {
 
 	func renderPage(_ webView: PreloadedWebView?) {
 		guard let webView = webView else { return }
+
+		// Rendering during an element-fullscreen transition triggers a WebKit
+		// RELEASE_ASSERT. Exit fullscreen first — the strong webView capture
+		// keeps it alive until then.
+		// <https://github.com/Ranchero-Software/NetNewsWire/issues/5382>
+		if webView.fullscreenState != .notInFullscreen {
+			webView.closeAllMediaPresentations { [weak self] in
+				self?.renderPage(webView)
+			}
+			return
+		}
 
 		let theme = ArticleThemesManager.shared.currentTheme
 		let rendering: ArticleRenderer.Rendering
@@ -626,16 +692,7 @@ private extension WebViewController {
 			rendering = ArticleRenderer.noSelectionHTML(theme: theme)
 		}
 
-		let substitutions = [
-			"title": rendering.title,
-			"baseURL": rendering.baseURL,
-			"style": rendering.style,
-			"body": rendering.html,
-			"windowScrollY": String(windowScrollY)
-		]
-
-		var html = try! MacroProcessor.renderedText(withTemplate: ArticleRenderer.page.html, substitutions: substitutions)
-		html = ArticleRenderingSpecialCases.filterHTMLIfNeeded(baseURL: rendering.baseURL, html: html)
+		let html = ArticleRenderer.pageHTML(rendering, windowScrollY: windowScrollY)
 
 		// Uncomment when you want to debug HTML and CSS for an article.
 		// If you’re running in the simulator, this will write the file to a location on your Mac.
@@ -645,7 +702,7 @@ private extension WebViewController {
 //		print("article.html written to \(fileURL.path)")
 
 		WebViewConfiguration.addContentBlockingRules(to: webView)
-		webView.loadHTMLString(html, baseURL: ArticleRenderer.page.baseURL)
+		webView.loadHTMLString(html, baseURL: URL(string: rendering.baseURL))
 	}
 
 	func finalScrollPosition(scrollingUp: Bool) -> CGFloat {
@@ -696,8 +753,14 @@ private extension WebViewController {
 
 		guard let imageURL = URL(string: clickMessage.imageURL) else { return }
 
-		Downloader.shared.download(imageURL) { [weak self] downloadResponse, error in
-			guard let self, let data = downloadResponse.data, error == nil, !data.isEmpty,
+		imageDownloadTask?.cancel()
+		imageDownloadTask = Task { [weak self] in
+			guard let downloadResponse = try? await Downloader.shared.download(imageURL, userAgentStyle: .browser) else {
+				return
+			}
+			// A late completion must not present the viewer over a different article
+			// or a returning app.
+			guard !Task.isCancelled, let self, let data = downloadResponse.data, !data.isEmpty,
 				  let image = UIImage(data: data) else {
 				return
 			}
@@ -719,7 +782,7 @@ private extension WebViewController {
 
 		transition.originImage = image
 
-		coordinator.showFullScreenImage(image: image, imageTitle: clickMessage.imageTitle, transitioningDelegate: self)
+		coordinator.showFullScreenImage(image: image, imageTitle: clickMessage.imageTitle, transition: transition)
 	}
 
 	func stopMediaPlayback(_ webView: WKWebView) {
@@ -736,7 +799,7 @@ private extension WebViewController {
 		topShowBarsView.translatesAutoresizingMaskIntoConstraints = false
 		view.addSubview(topShowBarsView)
 
-		if AppDefaults.shared.logicalArticleFullscreenEnabled {
+		if AppDefaults.logicalArticleFullscreenEnabled {
 			topShowBarsViewConstraint = view.topAnchor.constraint(equalTo: topShowBarsView.bottomAnchor, constant: -44.0)
 		} else {
 			topShowBarsViewConstraint = view.topAnchor.constraint(equalTo: topShowBarsView.bottomAnchor, constant: 0.0)
@@ -756,7 +819,7 @@ private extension WebViewController {
 		bottomShowBarsView.backgroundColor = .clear
 		bottomShowBarsView.translatesAutoresizingMaskIntoConstraints = false
 		view.addSubview(bottomShowBarsView)
-		if AppDefaults.shared.logicalArticleFullscreenEnabled {
+		if AppDefaults.logicalArticleFullscreenEnabled {
 			bottomShowBarsViewConstraint = view.bottomAnchor.constraint(equalTo: bottomShowBarsView.topAnchor, constant: 44.0)
 		} else {
 			bottomShowBarsViewConstraint = view.bottomAnchor.constraint(equalTo: bottomShowBarsView.topAnchor, constant: 0.0)
@@ -843,7 +906,7 @@ private extension WebViewController {
 	}
 
 	func nextUnreadArticleAction() -> UIAction? {
-		guard coordinator.isAnyUnreadAvailable else { return nil }
+		guard coordinator.isNextUnreadAvailable else { return nil }
 		let title = NSLocalizedString("Next Unread Article", comment: "Next Unread Article")
 		return UIAction(title: title, image: Assets.Images.nextUnread) { [weak self] _ in
 			self?.coordinator.selectNextUnread()
@@ -853,7 +916,7 @@ private extension WebViewController {
 	func toggleArticleExtractorAction() -> UIAction {
 		let extracted = articleExtractorButtonState == .on
 		let title = extracted ? NSLocalizedString("Show Feed Article", comment: "Show Feed Article") : NSLocalizedString("Show Reader View", comment: "Show Reader View")
-		let extractorImage = extracted ? Assets.Images.articleExtractorOffSF : Assets.Images.articleExtractorOnSF
+		let extractorImage = extracted ? Assets.Images.articleExtractorOff : Assets.Images.articleExtractorOn
 		return UIAction(title: title, image: extractorImage) { [weak self] _ in
 			self?.toggleArticleExtractor()
 		}
@@ -881,7 +944,21 @@ private extension WebViewController {
 		guard let viewController = SFSafariViewController.safeSafariViewController(url) else {
 			return
 		}
+		// Apply the resolved userInterfaceStyle before presenting to avoid a white flash in dark mode.
+		// <https://github.com/Ranchero-Software/NetNewsWire/issues/5383>
+		viewController.overrideUserInterfaceStyle = traitCollection.userInterfaceStyle
+		viewController.delegate = self
+		coordinator?.beganBrowsing(url: url)
 		present(viewController, animated: true)
+	}
+}
+
+// MARK: SFSafariViewControllerDelegate
+
+extension WebViewController: @preconcurrency SFSafariViewControllerDelegate {
+
+	func safariViewControllerDidFinish(_ controller: SFSafariViewController) {
+		coordinator?.endedBrowsing()
 	}
 }
 

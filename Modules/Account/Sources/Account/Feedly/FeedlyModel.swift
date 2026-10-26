@@ -1,5 +1,5 @@
 //
-//  File.swift
+//  FeedlyModel.swift
 //  Account
 //
 //  Created by Brent Simmons on 11/17/25.
@@ -46,7 +46,7 @@ struct FeedlyFeedParser {
 	private let rightToLeftTextSantizer = FeedlyRTLTextSanitizer()
 
 	var title: String? {
-		return rightToLeftTextSantizer.sanitize(feed.title) ?? ""
+		return rightToLeftTextSantizer.sanitize(feed.title)
 	}
 
 	var feedID: String {
@@ -162,6 +162,9 @@ struct FeedlyEntry: Decodable, Sendable {
 	/// the timestamp, in ms, when this article was re-processed and updated by the feedly Cloud servers.
 	let recrawled: Date?
 
+	/// When this article was published, as reported by the feed.
+	let published: Date?
+
 	/// the feed from which this article was crawled. If present, “streamId” will contain the feed id, “title” will contain the feed title, and “htmlUrl” will contain the feed’s website.
 	let origin: FeedlyOrigin?
 
@@ -183,10 +186,20 @@ struct FeedlyEntry: Decodable, Sendable {
 
 	/// A list of media links (videos, images, sound etc) provided by the feed. Some entries do not have a summary or content, only a collection of media links.
 	let enclosure: [FeedlyLink]?
+
+	/// The image Feedly associates with the article.
+	let visual: FeedlyVisual?
+}
+
+struct FeedlyVisual: Decodable, Sendable {
+	/// Sometimes the literal `none`.
+	let url: String?
 }
 
 struct FeedlyEntryParser {
 	let entry: FeedlyEntry
+
+	private static let noVisualURL = "none"
 
 	private let rightToLeftTextSantizer = FeedlyRTLTextSanitizer()
 
@@ -194,7 +207,7 @@ struct FeedlyEntryParser {
 		return entry.id
 	}
 
-	/// When ingesting articles, the feedURL must match a feed's `feedID` for the article to be reachable between it and its matching feed. It reminds me of a foreign key.
+	/// When saving articles, the feedURL must match a feed's `feedID` for the article to be reachable between it and its matching feed. It reminds me of a foreign key.
 	var feedURL: String? {
 		guard let id = entry.origin?.streamID else {
 			// At this point, check Feedly's API isn't glitching or the response has not changed structure.
@@ -218,7 +231,7 @@ struct FeedlyEntryParser {
 		return rightToLeftTextSantizer.sanitize(entry.title)
 	}
 
-	var contentHMTL: String? {
+	var contentHTML: String? {
 		return entry.content?.content ?? entry.summary?.content
 	}
 
@@ -232,6 +245,14 @@ struct FeedlyEntryParser {
 	}
 
 	var datePublished: Date {
+		// The publisher’s date when the feed provides one. Crawled is when Feedly’s
+		// servers processed the article — using it dated a newly added feed’s entire
+		// archive “now.” Publisher dates aren’t always reliable (per Feedly), so a
+		// future-dated article falls back to crawled rather than pinning itself to
+		// the top of a date-sorted timeline.
+		if let published = entry.published, published <= entry.crawled {
+			return published
+		}
 		return entry.crawled
 	}
 
@@ -254,12 +275,19 @@ struct FeedlyEntryParser {
 		return Set(labels)
 	}
 
-	var attachments: Set<ParsedAttachment>? {
+	var attachments: [ParsedAttachment]? {
 		guard let enclosure = entry.enclosure, !enclosure.isEmpty else {
 			return nil
 		}
-		let attachments = enclosure.compactMap { ParsedAttachment(url: $0.href, mimeType: $0.type, title: nil, sizeInBytes: nil, durationInSeconds: nil) }
-		return attachments.isEmpty ? nil : Set(attachments)
+		let attachments = enclosure.compactMap { ParsedAttachment(url: $0.href, mimeType: $0.type, title: nil, sizeInBytes: nil, durationInSeconds: nil, width: nil, height: nil, medium: nil) }
+		return attachments.isEmpty ? nil : attachments
+	}
+
+	var imageURL: String? {
+		guard let url = entry.visual?.url, !url.isEmpty, url != Self.noVisualURL else {
+			return nil
+		}
+		return url
 	}
 
 	var parsedItemRepresentation: ParsedItem? {
@@ -274,11 +302,12 @@ struct FeedlyEntryParser {
 						  externalURL: externalURL,
 						  title: title,
 						  language: nil,
-						  contentHTML: contentHMTL,
+						  contentHTML: contentHTML,
 						  contentText: contentText,
 						  markdown: nil,
 						  summary: summary,
-						  imageURL: nil,
+						  imageURL: imageURL,
+						  thumbnailURL: nil,
 						  bannerImageURL: nil,
 						  datePublished: datePublished,
 						  dateModified: dateModified,

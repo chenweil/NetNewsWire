@@ -1,36 +1,442 @@
 # Mac Release Notes
 
-### 7.2.4 26 October 2026
+### 7.3b3 7227 26 October 2026 — branch: chenwl
+
+Merged upstream NetNewsWire 7.3b2 into this branch
+
+Upstream’s changes since 7.2.1 are in the 7.3b2, 7.3b1, 7.2.1 and 7.2 sections below
+
+The Translation and RSSHub panes in Preferences are built in code now, since upstream replaced the Preferences storyboard with code-built panes
+
+### 7.2.4 26 October 2026 — branch: chenwl
 
 Changed the article view while a translation is being produced — the translation's raw HTML is no longer shown on screen. A shimmering placeholder stands in for the incoming text, and the finished translation fades in over it
 Fixed a failed translation showing the HTML of the partial translation instead of its text
 
-### 7.2.3 21 October 2026
+### 7.3b2 7226 22 Oct 2026 - branch: main tag: mac-7.3b2
+
+Fixed a crash at midnight when the status bar is showing
+Added the last-refresh time to the status bar, and made it the default
+Changed the status bar to use a shorter date format
+Added Refresh and Show/Hide Sidebar commands to the status bar gear menu
+Made clicking the progress indicator in the status bar open the Current Activity window (as in NetNewsWire of Yore)
+Fixed bug where the status bar divider might drift from the split view divider
+Fixed inline footnotes in FreshRSS articles
+Added netnewswire, feed, feeds, and x-netnewswire-feed as allowed link schemes in the article view — so clicking a link to install a theme (for instance) works
+
+### 7.2.3 21 October 2026 — branch: chenwl
 
 Fixed the About window, whose copyright line was cut off once it named the author of this version
 
-### 7.2.2 21 October 2026
+### 7.2.2 21 October 2026 — branch: chenwl
 
 Changed the About window to name the author of this version — along — and to link to the project's GitHub repository instead of the upstream website
 
-### 7.2.1 21 October 2026
+### 7.2.1 21 October 2026 — branch: chenwl
 
 Redesigned the comment thread — comments now read like a transcript: the author's picture, name and time sit on one line, a numbered gutter shows each comment's place in the thread, and replies are indented under a hairline
 Fixed the X-Large and XX-Large article text sizes not being applied
 
-### 7.2.0 21 October 2026
+### 7.2.0 21 October 2026 — branch: chenwl
 
 Added article comments — for V2EX topics, the replies are now shown below the article, which previously showed only the first post from the feed
 Fixed the translation display-mode control (Translation / Bilingual / Original) doing nothing when the open article had no translation — the article view now says why there is no translation, and the control is disabled instead of silently doing nothing
 Fixed the translation display-mode control not working when article JavaScript is turned off
 Added the translation display mode to Preferences → Translation, so it can be set when the open article has no translation
 
-### 7.1.2 8 October 2026
+### 7.3b1 7225 20 Oct 2026 - branch: main tag: mac-7.3b1
+
+Restored the status bar from NetNewsWire of Yore (NetNewsWire 1-3). Show and hide it via the View menu
+Fixed extra vertical space in MacRumors articles
+
+### 7.2.1 7224 19 Oct 2026 - branch: main tag: mac-7.2.1
+
+Same as 7.2.1b1 — just bumped the version.
+
+Changes since 7.2:
+
+Fixed bug where navigated-to row, in column layout, might appear under column headers
+Fixed bug where scroller hiding/showing could mess up sidebar layout
+Added magnet as an allowed link scheme
+
+### 7.2.1b1 7223 18 Oct 2026 - branch: main tag: mac-7.2.1b1
+
+Fixed bug where navigated-to row, in column layout, might appear under column headers
+Fixed bug where scroller hiding/showing could mess up sidebar layout
+Added magnet as an allowed link scheme
+
+### 7.2 7222 14 Oct 2026 - branch: main tag: mac-7.2
+
+Changes since 7.2b4:
+
+Fixed column view bug where next-unread could scroll to a row that’s hidden under the column headers
+
+Changes since 7.1.5:
+
+Added unread count display setting — show the count, show a dot, or hide it — which applies to the Dock icon badge, window title, and sidebar
+Added column layout for the timeline — choose View > Use Column Layout
+Expanded View > Sort Articles By with more options (works with standard and column layouts)
+Made timeline sorting per window instead of one setting for the whole app
+Made the Add Feed sheet start with the folder or account selected in the sidebar
+Changed the message for adding a feed that’s already added to include the name of the folder (or folders)
+Fixed bug where YouTube embeds in articles showed an error instead of playing
+Fixed bug where embedded videos with no set height — such as Inoreader’s YouTube player — collapsed to a short strip
+Fixed extra whitespace at the end of Slashdot articles and paragraphs running together
+Fixed parsing of RSS feed titles when a feed contains a textinput section (Slashdot, for instance)
+Added support for the instapaper_ignore class — elements marked with it are now removed from articles
+Changed tabs in pre and code elements in articles to display as four spaces
+Improved finding feeds in a page by skipping links to PDFs, movies, and other files that can’t be feeds
+Changed finding a feed to use the redirected-to URL
+Sped up Today and unread count queries
+Added up to 500 characters of the HTTP error response body to Error Log entries
+Fixed bug where the sidebar could reopen with no width when it had been collapsed in 7.1.x
+Fixed a memory leak when closing a main window
+Fixed a possible crash when the sidebar or timeline had no visible rows
+Changed sorting by title and by feed to sort numbers by value — “Episode 2” comes before “Episode 10”
+Added support for Substack-style footnotes
+Improved CJK text rendering in the article view by adding text-autospace
+Fixed horizontal overflow of WordPress Math blocks and SVGs in the Tiqoe Dark theme
+Improved font sizing and fixed superscript orphans in table cells in the Tiqoe Dark theme
+
+### 7.2b4 7221 11 Oct 2026 - branch: main tag: mac-7.2b4
+
+Fixed bug where embedded videos with no set height — such as Inoreader’s YouTube player — collapsed to a short strip
+
+### 7.2b3 7220 10 Oct 2026 - branch: main tag: mac-7.2b3
+
+Fixed the Settings layout on macOS 15
+Added Spanish translations for Settings and the Sort Articles By menu
+Made each Settings pane size itself to fit, for languages that need more room
+Fixed bug where the sidebar could reopen with no width when it had been collapsed in 7.1.x
+Fixed a memory leak when closing a main window
+Fixed a possible crash when the sidebar or timeline had no visible rows
+Changed sorting by title and by feed to sort numbers by value — “Episode 2” comes before “Episode 10”
+Improved finding feeds in a page by skipping links to X, Twitter, Facebook, and Instagram, and links to files with uppercase extensions or URL queries (such as .PDF or .jpg?w=600)
+Fixed bug where some sites with “youtube” in their names were treated as YouTube
+Fixed Slashdot feed detection (for Slashdot special cases) when the feed comes through a proxy such as FeedBurner
+Changed VoiceOver to say “unread” for sidebar unread counts shown as dots
+
+### 7.1.2 8 October 2026 — branch: chenwl
 
 Added article translation (Mac) — open an article and NetNewsWire translates the title and body into your language. Opt in via Preferences → Translation. On-device Apple Translation by default (free, private, no setup); articles longer than 1500 characters can use an OpenAI-compatible engine (base URL, model, and API key configurable in preferences)
 Added a toolbar control to switch the article view between translation, bilingual, and original display
 Added inline translation status, streaming display for long translations, and a retry button on failure
 Fixed CloudKit entitlement protection and improved ad-hoc DMG packaging
+
+### 7.2b2 7219 7 Oct 2026 - branch: main tag: mac-7.2b2
+
+Added support for Substack-style footnotes
+Improved CJK text rendering in the article view by adding text-autospace
+Fixed horizontal overflow of WordPress Math blocks and SVGs in the Tiqoe Dark theme
+
+### 7.2b1 7217 6 Oct 2026 - branch: main tag: mac-7.2b1
+
+Added unread count display setting — show the count, show a dot, or hide it — which applies to the Dock icon badge, window title, and sidebar
+Added column layout for the timeline — choose View > Use Column Layout
+Expanded View > Sort Articles By with more options (works with standard and column layouts)
+Made timeline sorting per window instead of one setting for the whole app
+Made the Add Feed sheet start with the folder or account selected in the sidebar
+Changed the message for adding a feed that’s already added to include the name of the folder (or folders)
+Fixed bug where YouTube embeds in articles showed an error instead of playing
+Fixed extra whitespace at the end of Slashdot articles and paragraphs running together
+Fixed parsing of RSS feed titles when a feed contains a textinput section (Slashdot, for instance)
+Added support for the instapaper_ignore class — elements marked with it are now removed from articles
+Changed tabs in pre and code elements in articles to display as four spaces
+Improved finding feeds in a page by skipping links to PDFs, movies, and other files that can’t be feeds
+Changed finding a feed to use the redirected-to URL
+Improved font sizing and fixed superscript orphans in table cells in the Tiqoe Dark theme
+Sped up Today and unread count queries
+Added up to 500 characters of the HTTP error response body to Error Log entries
+
+### 7.1.5 7216 29 Sep 2026 - branch: release/macos-7.1.5 tag: mac-7.1.5
+
+Fixed bug introduced in 7.1.4 where the app wouldn’t ask for notifications permission on launch, which meant no unread count in the Dock icon for new users
+
+### 7.1.4 7214 20 Sep 2026 - branch: main tag: mac-7.1.4
+
+Same as 7.1.4b3.
+
+Changes since 7.1.3:
+
+Fixed bug where read and starred statuses could stop syncing once more than 999 of them were queued (Feedbin, Feedly, NewsBlur, Reader API)
+Kept syncing read and starred statuses even when sending article content fails
+Kept fetching articles after an error sending statuses, and kept sending the rest of the statuses after one batch of them fails
+Stopped repeatedly reauthorizing a Feedly token the server has rejected
+Fixed bug where some FreshRSS, BazQux, Inoreader, and The Old Reader articles could never be marked read or starred on the server
+Fixed bug where a feed could disappear during syncing when its folder is missing locally (Feedbin and Reader API)
+Fixed bug where syncing could skip some folders (Feedbin and Reader API)
+Fixed bug where an interrupted sync could cause articles to be skipped (Feedbin and Reader API)
+Fixed bug where dates from servers could fail to parse under some system languages
+Fixed bug where iCloud syncing could stall on a batch the server considers too large
+Fixed potential hangs in iCloud syncing
+Made push-triggered iCloud syncing work even when notifications aren’t authorized
+Showed errors in the Error Log when the database can’t be read or written
+Fixed bug where a site asking the app to slow down (429 responses) could slow down refreshing for other sites with similar names
+Sped up openrss.org feeds — the app now fetches one feed an hour instead of one feed every 10 hours
+Fixed bug where the first refresh after launching could be skipped
+Fixed potential hangs while refreshing
+Fixed bug where a feed in On My Mac could fail to update after refreshing
+Stopped the article view from storing cookies and other website data on disk — feed content now runs in a private-browsing-like session
+Recovered from WebKit content-process termination, so articles no longer come up blank after the system reclaims the web views
+Made it so it will download article themes from http and https URLs only, with a maximum download size
+Fixed bug where exported OPML could contain characters that make the file invalid
+Fixed bug where renaming an account in Preferences lost keyboard focus after each keystroke
+Trimmed spaces from the username when adding a Feedbin or NewsBlur account
+Fixed Dinosaurs bugs where sorting lost the selection and where Delete could remove the wrong feeds
+Disabled JavaScript for Slashdot, regardless of the setting, due to dickovers
+Fixed crash that could happen when the app was moved after macOS had run it from a quarantined location, such as the Downloads folder
+
+### 7.1.4b3 7212 18 Sep 2026 - branch: main tag: mac-7.1.4b3
+
+Disabled JavaScript for Slashdot, regardless of the setting, due to dickovers
+Fixed crash that could happen when the app was moved after macOS had run it from a quarantined location, such as the Downloads folder
+
+### 7.1.4b2 7211 17 Sep 2026 - branch: main tag: mac-7.1.4b2
+
+Fixed bug where read and starred statuses could stop syncing once more than 999 of them were queued (Feedbin, Feedly, NewsBlur, Reader API)
+Kept syncing read and starred statuses even when sending article content fails
+Kept fetching articles after an error sending statuses, and kept sending the rest of the statuses after one batch of them fails
+Stopped repeatedly reauthorizing a Feedly token the server has rejected
+Fixed bug where some FreshRSS, BazQux, Inoreader, and The Old Reader articles could never be marked read or starred on the server
+Fixed bug where a feed could disappear during syncing when its folder is missing locally (Feedbin and Reader API)
+Fixed bug where syncing could skip some folders (Feedbin and Reader API)
+Fixed bug where an interrupted sync could cause articles to be skipped (Feedbin and Reader API)
+Fixed bug where dates from servers could fail to parse under some system languages
+Fixed bug where iCloud syncing could stall on a batch the server considers too large
+Fixed potential hangs in iCloud syncing
+Made push-triggered iCloud syncing work even when notifications aren’t authorized
+Showed errors in the Error Log when the database can’t be read or written
+Fixed bug where a site asking the app to slow down (429 responses) could slow down refreshing for other sites with similar names
+Sped up openrss.org feeds — the app now fetches one feed an hour instead of one feed every 10 hours
+Fixed bug where the first refresh after launching could be skipped
+Fixed potential hangs while refreshing
+Fixed bug where a feed in On My Mac could fail to update after refreshing
+Stopped the article view from storing cookies and other website data on disk — feed content now runs in a private-browsing-like session
+Recovered from WebKit content-process termination, so articles no longer come up blank after the system reclaims the web views
+Made it so it will download article themes from http and https URLs only, with a maximum download size
+Fixed bug where exported OPML could contain characters that make the file invalid
+Fixed bug where renaming an account in Preferences lost keyboard focus after each keystroke
+Trimmed spaces from the username when adding a Feedbin or NewsBlur account
+Fixed Dinosaurs bugs where sorting lost the selection and where Delete could remove the wrong feeds
+
+### 7.1.4b1 7209 26 Aug 2026 - branch: main tag: mac-7.1.4b1
+
+Fixed bug where article text could overlap the article’s top image in some feeds, including Gear Patrol’s
+
+### 7.1.3 7207 19 Aug 2026 — branch: main tag: mac-7.1.3
+
+Changes since 7.1.2:
+
+Overhauled Feedly syncing to prevent too-many-requests that could get users temporarily banned
+Fixed the Feedly mark-as-read backlog that could grow forever and re-send the same statuses
+Fixed Feedly folder and feed bugs — renaming a folder during a refresh could delete it, restoring a deleted folder restored nothing, a failed move could leave a feed in two folders, same-named folders collapsed into one, and right-to-left and untitled feed names were rewritten every sync
+Fixed bug where a Feedly feed the server no longer knows about could never be deleted
+Made Feedly sign-in and token refresh more robust — canceling on the consent page no longer shows an error, expired tokens refresh reliably, and removing the account always removes its tokens from the Keychain
+Used the published dates Feedly reports for articles, so a newly added feed’s archive is no longer dated all today
+Paused Reader API syncing when the server reports too many requests, honoring its retry time — and Inoreader additionally conserves its API quota by skipping status downloads when near its daily limit
+Sent queued article statuses for Inoreader on every status sync, so read and starred changes no longer wait out the quota throttle
+Fixed folder creation for Reader API accounts (FreshRSS, BazQux, The Old Reader) — new folders no longer disappear before a feed makes them real on the server
+Fixed Reader API article ID encoding that could make article downloads fail
+Used conditional GET for Reader API tag and subscription lists
+Posted real errors to the Error Log from Reader API status syncing, and kept an unread fetch failure from skipping the starred fetch
+Fixed bug where article titles, author names, and feed names from FreshRSS could show full-width versions of & < >
+Fixed NewsBlur folder syncing aborting on a missing folder, applied server-side feed updates, and preserved locally edited feed names
+Checked iCloud account status before syncing — feeds still refresh, without repeated error alerts, while iCloud is unavailable (such as when new Terms and Conditions need accepting, which now shows a clear message), and syncing resumes automatically when iCloud comes back
+Fixed bug where an iCloud feed moved between folders could disappear until the destination folder synced
+Fixed iCloud sync progress leaks that left the Refresh button and menu item wrongly disabled
+Fixed bugs in Feedbin, Feedly, NewsBlur, and Reader API accounts where a status refresh could briefly revert just-made read and starred changes
+Fixed bug where sending an article’s read status could delete its queued starred status
+Made statuses queued when the app was killed get sent at next launch
+Fixed bug where a feed could show a phantom unread count that came back after reading articles in other feeds
+Fixed bug where feeds could lose their names and display as Untitled
+Preserved custom feed titles from imported OPML across refreshes
+Repaired a feed’s stored ID when a sync service reports a different authoritative one
+Allowed accounts with the same username on different servers
+Showed the account name and type in sync error messages, and stopped showing sync decoding errors as theme import errors
+Dropped unhelpful recovery suggestions from error alerts that have no recovery options
+Made feed and sync requests wait for connectivity instead of failing when the network isn't ready, such as right after waking from sleep
+Stopped skipping feeds on the next refresh when the previous attempt failed with a connectivity error
+Stopped caching failed downloads, so retrying a feed right after a timeout tries the network instead of reporting the feed not found
+Fixed bug where a download callback that started a new download of the same URL was silently dropped
+Used a browser user-agent string for image and theme downloads
+Fixed bug where finishing a refresh could wrongly complete unrelated Activity Log activities, such as an in-progress feed subscribe
+Fixed feed discovery bugs caused by slashes in unquoted HTML attribute values
+Added a feed-finding special case for relay.fm/blog
+Simplified the Safari extension — it sends the page URL and NetNewsWire does all feed discovery, and the toolbar button works without reloading the page
+Supported Atom xml:base for resolving relative URLs
+Extracted the article body from feeds that put a full HTML page in an article
+Kept the current article in the timeline, and kept it selected, when the timeline updates and the sidebar selection hasn’t changed
+Fixed bug where feed-list changes could drop read articles from the timeline before it was time to drop them
+Updated smart feed unread counts on app activation and at the day change
+Skipped expanded folders when going to the next unread, matching iOS
+Removed punctuation and symbols when indexing search text, so words in curly quotes (for instance) are findable
+Cleared undo stacks on all windows after dragging feeds in the sidebar, so a stale undo can’t misfire
+Fixed sidebar cells laid out with a stale width
+Improved contrast for the star icon in the smart feeds list
+Fixed bug where an article updated during a refresh could reload the article view and reset the scroll position
+Stopped scrolling from carrying over to the next article when switching articles mid-scroll
+Fixed text selection in a footnote within a footnote
+Fixed mailto links that were already percent-encoded showing a literal %20 in the subject line
+Removed the system-generated Back and Forward commands from the article view contextual menu
+Preserved the aspect ratio of fixed-size iframes when the article width shrinks them
+Hid Mailchimp newsletter social icon walls and social-share icon blocks whose unsized SVG icons rendered at full width
+Sized inline SVG icons that depend on stripped stylesheets — Tailwind classes and Material for MkDocs markup
+Zeroed negative side margins on tables so they stay inside the article
+Kept absolutely positioned feed content from escaping the article body and overlapping the title
+Hid the Slashdot discussion iframe that showed a cookie-consent banner in the article view
+Declared UTF-8 in the HTML written to the pasteboard when copying
+Passed any selected HTML to MarsEdit and Micro.blog instead of plain text only
+Restored full screen window state across launches
+Made sure the toolbar is showing when moving focus to the search field
+Enabled toolbar items in Text Only mode
+Added Clean Up to the global keyboard shortcuts so the keyboard shortcut fires reliably
+Fixed Handoff showing “No selection” after the source device was locked
+Switched to the current standard Sparkle framework for software updates — fixes the “Updater.app is damaged” error on macOS 27 betas and the “org.sparkle-project.Downloader” warning
+
+### 7.1.3b5 7206 16 Aug 2026 — branch: main tag: mac-7.1.3b5
+
+Fixed bug where feeds could lose their names and display as Untitled
+
+### 7.1.3b4 7205 11 Aug 2026 — branch: main tag: mac-7.1.3b4
+
+Fixed bug where a feed could show a phantom unread count that came back after reading articles in other feeds
+Made feed and sync requests wait for connectivity instead of failing when the network isn't ready, such as right after waking from sleep
+Stopped skipping feeds on the next refresh when the previous attempt failed with a connectivity error
+Hid the Slashdot discussion iframe that showed a cookie-consent banner in the article view
+
+### 7.1.3b3 7204 10 Aug 2026 — branch: main tag: mac-7.1.3b3
+
+Fixed bug where article titles, author names, and feed names from FreshRSS could show full-width versions of & < >
+
+### 7.1.3b2 7202 7 Aug 2026 — branch: main tag: mac-7.1.3b2
+
+Switched to the current standard Sparkle framework for software updates — fixes the “Updater.app is damaged” error on macOS 27 betas and the “org.sparkle-project.Downloader” warning
+Fixed bug where an article updated during a refresh could reload the article view and reset the scroll position
+Fixed bug where finishing a refresh could wrongly complete unrelated Activity Log activities, such as an in-progress feed subscribe
+Stopped caching failed downloads, so retrying a feed right after a timeout tries the network instead of reporting the feed not found
+Fixed bug where a download callback that started a new download of the same URL was silently dropped
+Removed the system-generated Back and Forward commands from the article view contextual menu
+
+### 7.1.3b1 7200 3 Aug 2026 - branch: main tag: mac-7.1.3b1
+
+Overhauled Feedly syncing to prevent the request floods that could get users temporarily banned — syncing pauses when Feedly reports rate limiting, fetches only what changed since the last sync, caps article downloads per refresh, and directly refreshes a few feeds each sync to backfill articles missing from Feedly’s aggregate stream
+Fixed the Feedly mark-as-read backlog that could grow forever and re-send the same statuses — sent statuses are recorded as they succeed, and statuses Feedly can no longer accept (articles past its 31-day marker limit) are dropped
+Used the published dates Feedly reports for articles, so a newly added feed’s archive is no longer dated all today
+Fixed Feedly folder and feed bugs — renaming a folder during a refresh could delete it, restoring a deleted folder restored nothing, a failed move could leave a feed in two folders, same-named folders collapsed into one, and right-to-left and untitled feed names were rewritten every sync
+Made Feedly sign-in and token refresh more robust — canceling on the consent page no longer shows an error, expired tokens refresh reliably, and removing the account always removes its tokens from the Keychain
+Fixed bug where a Feedly feed the server no longer knows about could never be deleted
+Paused Reader API syncing when the server reports too many requests, honoring its retry time — and Inoreader additionally conserves its API quota by skipping status downloads when near its daily limit
+Sent queued article statuses for Inoreader on every status sync, so read and starred changes no longer wait out the quota throttle
+Fixed folder creation for Reader API accounts (FreshRSS, BazQux, The Old Reader) — new folders no longer disappear before a feed makes them real on the server
+Fixed Reader API article ID encoding that could make article downloads fail
+Used conditional GET for Reader API tag and subscription lists
+Posted real errors to the Error Log from Reader API status syncing, and kept an unread fetch failure from skipping the starred fetch
+Fixed NewsBlur folder syncing aborting on a missing folder, applied server-side feed updates, and preserved locally edited feed names
+Checked iCloud account status before syncing — feeds still refresh, without repeated error alerts, while iCloud is unavailable (such as when new Terms and Conditions need accepting, which now shows a clear message), and syncing resumes automatically when iCloud comes back
+Fixed bug where an iCloud feed moved between folders could disappear until the destination folder synced
+Fixed iCloud sync progress leaks that left the Refresh button and menu item wrongly disabled
+Fixed bugs in Feedbin, Feedly, NewsBlur, and Reader API accounts where a status refresh could briefly revert just-made read and starred changes
+Fixed bug where sending an article’s read status could delete its queued starred status
+Made statuses queued when the app was killed get sent at next launch
+Repaired a feed’s stored ID when a sync service reports a different authoritative one
+Allowed accounts with the same username on different servers
+Showed the account name and type in sync error messages, and stopped showing sync decoding errors as theme import errors
+Dropped unhelpful recovery suggestions from error alerts that have no recovery options
+Fixed feed discovery bugs caused by slashes in unquoted HTML attribute values
+Supported Atom xml:base for resolving relative URLs
+Preserved custom feed titles from imported OPML across refreshes
+Added a feed-finding special case for relay.fm/blog
+Extracted the article body from feeds that put a full HTML page in an article
+Simplified the Safari extension — it sends the page URL and NetNewsWire does all feed discovery, and the toolbar button works without reloading the page
+Used a browser user-agent string for image and theme downloads
+Removed punctuation and symbols when indexing search text, so words in curly quotes (for instance) are findable
+Kept the current article in the timeline, and kept it selected, when the timeline updates and the sidebar selection hasn’t changed
+Fixed bug where feed-list changes could drop read articles from the timeline before it was time to drop them
+Updated smart feed unread counts on app activation and at the day change
+Skipped expanded folders when going to the next unread, matching iOS
+Cleared undo stacks on all windows after dragging feeds in the sidebar, so a stale undo can’t misfire
+Fixed sidebar cells laid out with a stale width
+Improved contrast for the star icon in the smart feeds list
+Stopped scrolling from carrying over to the next article when switching articles mid-scroll
+Preserved the aspect ratio of fixed-size iframes when the article width shrinks them
+Hid Mailchimp newsletter social icon walls and social-share icon blocks whose unsized SVG icons rendered at full width
+Sized inline SVG icons that depend on stripped stylesheets — Tailwind classes and Material for MkDocs markup
+Zeroed negative side margins on tables so they stay inside the article
+Kept absolutely positioned feed content from escaping the article body and overlapping the title
+Fixed text selection in a footnote within a footnote
+Fixed mailto links that were already percent-encoded showing a literal %20 in the subject line
+Declared UTF-8 in the HTML written to the pasteboard when copying
+Passed any selected HTML to MarsEdit and Micro.blog instead of plain text only
+Restored full screen window state across launches
+Made sure the toolbar is showing when moving focus to the search field
+Enabled toolbar items in Text Only mode
+Added Clean Up to the global keyboard shortcuts so the keyboard shortcut fires reliably
+Fixed Handoff showing “No selection” after the source device was locked
+
+### 7.1.2 7113 2 Aug 2026 - branch: main tag: mac-7.1.2
+
+Changes since 7.1.1:
+
+Fixed bug where code inside a quoted attribute value (such as a `srcset` media query containing `>=`) could appear in place of the article summary in the timeline
+Fixed bug where a title containing a “<” that didn’t begin an HTML tag was truncated
+Made `<abbr>` and other attributed title tags — including tags with uppercase letters — render as text instead of raw markup (in article titles)
+Fixed bug where zero-width joiner entities (`&zwj;` and `&zwnj;`) weren’t decoded
+Fixed bug where iframes (such as Apple Podcasts embeds) with a unit in the height attribute were sized incorrectly
+Prevented article web content from navigating away, via JavaScript, to a full webpage in the detail view
+Made the reader view toolbar button the right size by switching to an SF Symbol
+Fixed bug where the Next Unread button was enabled when the only unread article was the one already selected
+Fixed bug where scrollbars set to always show would disappear during live resize
+Kept the article’s left edge stable when a scrollbar appears or disappears
+Fixed bug where Reader API accounts (like FreshRSS) could stop syncing — authentication tokens are now refreshed as needed, and a refresh continues even when sending article statuses fails
+Stopped waiting for an initial refresh to finish before closing the add-account sheet — the account appears right away
+Restored human-readable CloudKit error messages
+Used a WebKit user-agent string (with NetNewsWire as the app name) for web content shown in the app
+Made updating unread counts for folders more efficient — coalesce calculations instead of once per feed
+Fixed bug where arrowing up to the top of the timeline left the top article half hidden under the toolbar — and the similar bug where arrowing down could overshoot the last article
+Fixed bug where subscribing in a Feedly account using a home page URL sometimes failed to find the feed — when Feedly search comes up empty, the app now finds the feed itself and tries again
+Fixed double border around the accounts list in the Accounts pane of Settings
+
+Changes in this build:
+
+Added a special case for blog.naver.com to Reader View
+
+### 7.1.2b2 7111 25 July 2026 — branch: main tag: mac-7.1.2b2
+
+Made updating unread counts for folders more efficient — coalesce calculations instead of once per feed
+Fixed bug where arrowing up to the top of the timeline left the top article half hidden under the toolbar — and the similar bug where arrowing down could overshoot the last article
+Fixed bug where subscribing in a Feedly account using a home page URL sometimes failed to find the feed — when Feedly search comes up empty, the app now finds the feed itself and tries again
+Fixed double border around the accounts list in the Accounts pane of Settings
+
+### 7.1.2b1 7109 24 July 2026 — branch: main tag: mac-7.1.2b1
+
+Fixed bug where code inside a quoted attribute value (such as a `srcset` media query containing `>=`) could appear in place of the article summary in the timeline
+Fixed bug where a title containing a “<” that didn’t begin an HTML tag was truncated
+Made `<abbr>` and other attributed title tags — including tags with uppercase letters — render as text instead of raw markup (in article titles)
+Fixed bug where zero-width joiner entities (`&zwj;` and `&zwnj;`) weren’t decoded
+Fixed bug where iframes (such as Apple Podcasts embeds) with a unit in the height attribute were sized incorrectly
+Prevented article web content from navigating away, via JavaScript, to a full webpage in the detail view
+Made the reader view toolbar button the right size by switching to an SF Symbol
+Fixed bug where the Next Unread button was enabled when the only unread article was the one already selected
+Fixed bug where scrollbars set to always show would disappear during live resize
+Kept the article’s left edge stable when a scrollbar appears or disappears
+Fixed bug where Reader API accounts (like FreshRSS) could stop syncing — authentication tokens are now refreshed as needed, and a refresh continues even when sending article statuses fails
+Stopped waiting for an initial refresh to finish before closing the add-account sheet — the account appears right away
+Restored human-readable CloudKit error messages
+Used a WebKit user-agent string (with NetNewsWire as the app name) for web content shown in the app
+
+### 7.1.1 7108 30 June 2026 — branch: main tag: mac-7.1.1
+
+Changes since 7.1:
+
+Handled Reddit’s new rate limiting (one feed per minute) by refreshing just one Reddit feed — the least-recently-checked one — per refresh session
+Stopped scaling up small feed images — the blurriness is worse than the smallness
+Fixed bug where transparent pixels in a feed icon were counted as black when picking a background color
+
+### 7.1.1b1 7107 28 June 2026 — branch: main tag: mac-7.1.1b1
+
+Handled Reddit’s new rate limiting (one feed per minute) by refreshing just one Reddit feed — the least-recently-checked one — per refresh session
+Stopped scaling up small feed images — the blurriness is worse than the smallness
+Fixed bug where transparent pixels in a feed icon were counted as black when picking a background color
 
 ### 7.1 7106 25 June 2026 — branch: main tag: mac-7.1
 
@@ -317,7 +723,6 @@ Fixed a layout bug in the About window where text could get clipped on some mach
 Made the version selectable in the About window
 Fixed a typo in the About window credits
 
-
 ### 7.0.1b5 7020 3 Mar 2026 — branch: main tag: mac-7.0.1b5
 
 Restore, on macOS 15, the separator between the toolbar and the article view
@@ -450,7 +855,6 @@ Fixed a bug where images that are links could get underlined in the default them
 Fixed a bug finding a feed in a page that has no body tag
 Now using a number formatter for unread counts in the sidebar
 
-
 ### 6.1.11b1 build 6141 9 Sep 2025 - branch: main tag: mac-6.1.11b1
 
 Fixed bug with some favicons rendering weird, with dark vertical lines. Note: due to caching, the fix may take a few days to take effect. <https://github.com/Ranchero-Software/NetNewsWire/issues/4523>
@@ -479,11 +883,6 @@ Fixed bug where links in footnotes — in light mode, using the default theme �
 Fixed double-underlines on 404 Media links. (Fixed bug where using <u> tag inside an <a> would cause two underlines.)
 Added &smallcircle; to the entities decoder
 Synced the Mac default theme with the iOS version
-
-### 6.1.9b1 build 6134 11 Jan 2024 - branch: 6.1.9-mac tag: mac-6.1.9b1
-
-Fix some glitches in the default article theme
-Fix an issue with slow updates for some feeds (by not paying attention to http Cache-Control response headers [except for openrss.org])
 
 ### 6.1.8 build 6133 19 Dec 2024 - branch 6.1.8-mac tag: mac-6.1.8
 
@@ -544,6 +943,11 @@ Remove FeedWrangler support code
 Fix data race with article status (read/unread and starred/unstarred)
 Switch to using built-in URLSession caching — supports Cache-Control response header and other good things — means the app uses less bandwidth and is kinder to the servers it contacts
 Add support for handling 429 responses
+
+### 6.1.9b1 build 6134 11 Jan 2024 - branch: 6.1.9-mac tag: mac-6.1.9b1
+
+Fix some glitches in the default article theme
+Fix an issue with slow updates for some feeds (by not paying attention to http Cache-Control response headers [except for openrss.org])
 
 ### 6.1.5b1 build 6121 1 Dec 2023
 
@@ -610,7 +1014,6 @@ Building on a new Apple Silicon Mac — testing to make sure all’s well
 ### 6.1b4 build 6103 27 Feb 2022
 
 Fixed a few font and sizing issues
-
 
 ### 6.1b3 build 6102 - 8 Feb 2022
 
@@ -694,7 +1097,6 @@ Article view: fixed bug where URL status field might not disappear when switchin
 iCloud sync: dragging feeds from elsewhere in the sidebar to the iCloud account won’t trigger the feed-finding process since this is a better experience for migrating
 Syncing: fixed a bug authenticating with some sync services when the user has some special characters in their password
 Preferences: removed checkbox for showing unread count in the Dock — control this instead via System Preferences > Notifications > NetNewsWire > Badge app icon
-
 
 ### 6.0b2 build 6022 - 13 Mar 2021
 

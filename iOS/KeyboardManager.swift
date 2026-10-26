@@ -48,9 +48,7 @@ enum KeyboardType: String, Sendable {
 	static func createKeyCommand(title: String, action: String, input: String, modifiers: UIKeyModifierFlags) -> UIKeyCommand {
 		let selector = NSSelectorFromString(action)
 		let keyCommand = UIKeyCommand(title: title, image: nil, action: selector, input: input, modifierFlags: modifiers, propertyList: nil, alternates: [], discoverabilityTitle: nil, attributes: [], state: .on)
-		if #available(iOS 15.0, *) {
-			keyCommand.wantsPriorityOverSystemBehavior = true
-		}
+		keyCommand.wantsPriorityOverSystemBehavior = true
 		return keyCommand
 	}
 }
@@ -66,9 +64,7 @@ private extension KeyboardManager {
 			return KeyboardManager.createKeyCommand(title: title, action: action, input: input, modifiers: modifiers)
 		} else {
 			let keyCommand = UIKeyCommand(input: input, modifierFlags: modifiers, action: NSSelectorFromString(action))
-			if #available(iOS 15.0, *) {
-				keyCommand.wantsPriorityOverSystemBehavior = true
-			}
+			keyCommand.wantsPriorityOverSystemBehavior = true
 			return keyCommand
 		}
 	}
@@ -168,6 +164,9 @@ private extension KeyboardManager {
 		let toggleReadArticlesFilter = NSLocalizedString("Toggle Read Articles Filter", comment: "Toggle Read Articles Filter")
 		keys.append(KeyboardManager.createKeyCommand(title: toggleReadArticlesFilter, action: "toggleReadArticlesFilter:", input: "h", modifiers: [.command, .shift]))
 
+		let toggleReaderView = NSLocalizedString("Toggle Reader View", comment: "Toggle Reader View")
+		keys.append(KeyboardManager.createKeyCommand(title: toggleReaderView, action: "toggleReaderView:", input: "r", modifiers: [.command, .shift]))
+
 		return keys
 	}
 
@@ -212,9 +211,6 @@ private extension KeyboardManager {
 
 		let toggleSidebar = NSLocalizedString("Toggle Sidebar", comment: "Toggle Sidebar")
 		keys.append(KeyboardManager.createKeyCommand(title: toggleSidebar, action: "toggleSidebar:", input: "s", modifiers: [.command, .control]))
-
-		let toggleReaderView = NSLocalizedString("Toggle Reader View", comment: "Toggle Reader View")
-		keys.append(KeyboardManager.createKeyCommand(title: toggleReaderView, action: "toggleReaderView:", input: "r", modifiers: [.command, .shift]))
 
 		return keys
 	}

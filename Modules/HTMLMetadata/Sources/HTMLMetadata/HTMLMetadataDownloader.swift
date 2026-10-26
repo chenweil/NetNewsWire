@@ -11,20 +11,21 @@ import os
 import RSCore
 import RSParser
 import RSWeb
+import Synchronization
 import ActivityLog
 
 nonisolated public final class HTMLMetadataDownloader: Sendable {
 
 	public static let shared = HTMLMetadataDownloader()
 
-	private static let logger = Logger(subsystem: Bundle.main.bundleIdentifier!, category: "HTMLMetadataDownloader")
+	private static let logger = Logger(subsystem: Logger.nnwSubsystem, category: "HTMLMetadataDownloader")
 
 	private static let hoursBetweenAttempts = 3
 
-	private let attemptDates = OSAllocatedUnfairLock(initialState: [String: Date]())
+	private let attemptDates = Mutex([String: Date]())
 
 	/// In-memory mirror so `cachedMetadata(for:)` can answer synchronously.
-	private let cache = OSAllocatedUnfairLock(initialState: [String: HTMLMetadataRecord]())
+	private let cache = Mutex([String: HTMLMetadataRecord]())
 
 	init() {
 		NotificationCenter.default.addObserver(self, selector: #selector(handleAppDidGoToBackground(_:)), name: .appDidGoToBackground, object: nil)
@@ -117,7 +118,7 @@ nonisolated private extension HTMLMetadataDownloader {
 			activityLog.didStart(.htmlMetadataDownloader, kind: kind)
 
 			do {
-				let downloadResponse = try await Downloader.shared.download(actualURL)
+				let downloadResponse = try await Downloader.shared.download(actualURL, userAgentStyle: .browser)
 
 				if let data = downloadResponse.data, !data.isEmpty, let response = downloadResponse.response, response.statusIsOK {
 					let urlToUse = response.url ?? actualURL

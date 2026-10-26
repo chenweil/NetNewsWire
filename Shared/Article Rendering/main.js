@@ -1,13 +1,33 @@
 // Here we are making iframes responsive.  Particularly useful for inline Youtube videos.
 function wrapFrames() {
 	document.querySelectorAll("iframe").forEach(element => {
-		if (element.height > 0 || parseInt(element.style.height) > 0)
+		if (getComputedStyle(element).display === "none") {
 			return;
+		}
+		if (parseInt(element.height) > 0) {
+			preserveAspectRatioOfFixedSizeFrame(element);
+			return;
+		}
 		var wrapper = document.createElement("div");
 		wrapper.classList.add("iframeWrap");
 		element.parentNode.insertBefore(wrapper, element);
 		wrapper.appendChild(element);
 	});
+}
+
+// The stylesheet clamps iframes to the article width with max-width: 100%,
+// which leaves an attribute-sized iframe with its full height — distorted,
+// and a huge blank box when the embed fails to load. Let the height follow
+// the width instead.
+function preserveAspectRatioOfFixedSizeFrame(element) {
+	const numeric = /^[1-9]\d*$/;
+	const width = element.getAttribute("width");
+	const height = element.getAttribute("height");
+	if (!numeric.test(width) || !numeric.test(height) || element.style.height) {
+		return;
+	}
+	element.style.aspectRatio = width + " / " + height;
+	element.style.height = "auto";
 }
 
 // Strip out color and font styling
@@ -22,7 +42,12 @@ function stripStylesFromElement(element, propertiesToStrip) {
 function stripStyles() {
 	document.getElementsByTagName("body")[0].querySelectorAll("style, link[rel=stylesheet]").forEach(element => element.remove());
 	// Removing "background" and "font" will also remove properties that would be reflected in them, e.g., "background-color" and "font-family"
-	document.getElementsByTagName("body")[0].querySelectorAll("[style]").forEach(element => stripStylesFromElement(element, ["color", "background", "font", "max-width", "max-height", "position"]));
+	// The stylesheet forces images to height: auto, so an author aspect-ratio box can't be filled by its image — content after the box overlaps the overflowing image.
+	// Iframes keep their aspect-ratio: without it an iframe with no pixel height collapses to the default 150px.
+	document.getElementsByTagName("body")[0].querySelectorAll("[style]").forEach(element => {
+		const isIframe = element.tagName === "IFRAME";
+		stripStylesFromElement(element, isIframe ? ["color", "background", "font", "max-width", "max-height", "position"] : ["color", "background", "font", "max-width", "max-height", "position", "aspect-ratio"]);
+	});
 }
 
 // Constrain the height of iframes whose heights are defined relative to the document body to be at most
@@ -31,7 +56,10 @@ function constrainBodyRelativeIframes() {
 	let iframes = document.getElementsByTagName("iframe");
 
 	for (iframe of iframes) {
-		if (iframe.offsetParent === document.body) {
+		// The article body container is positioned, so it — not document.body —
+		// is the offsetParent for iframes with no positioned ancestor in the content.
+		const offsetParent = iframe.offsetParent;
+		if (offsetParent === document.body || (offsetParent && (offsetParent.classList.contains("articleBody") || offsetParent.classList.contains("article-body")))) {
 			let heightAttribute = iframe.style.height;
 
 			if (/%|vw|vh$/i.test(heightAttribute)) {
@@ -61,6 +89,15 @@ function wrapTables() {
 		wrapper.className = "nnw-overflow";
 		table.parentNode.insertBefore(wrapper, table);
 		wrapper.appendChild(table);
+
+		// A negative side margin — usually from the site's own page layout —
+		// would put part of the table where the wrapper can't scroll to it.
+		if (parseFloat(getComputedStyle(table).marginLeft) < 0) {
+			table.style.marginLeft = "0";
+		}
+		if (parseFloat(getComputedStyle(table).marginRight) < 0) {
+			table.style.marginRight = "0";
+		}
 	}
 }
 
@@ -138,11 +175,13 @@ function error() {
 
 // Takes into account absoluting of URLs.
 function isLocalFootnote(target) {
-	return target.hash.startsWith("#fn") && target.href.indexOf(document.baseURI) === 0;
+	return (target.hash.startsWith("#fn") || target.hash.startsWith("#footnote")) && target.href.indexOf(document.baseURI) === 0;
 }
 
 function styleLocalFootnotes() {
-	for (elem of document.querySelectorAll("sup > a[href*='#fn'], sup > div > a[href*='#fn']")) {
+	// Multimarkdown-style: <sup><a href="#fn…">. Substack-style: a bare
+	// <a id="footnote-anchor-N" href="#footnote-N"> with no <sup> wrapper.
+	for (elem of document.querySelectorAll("sup > a[href*='#fn'], sup > div > a[href*='#fn'], a[id^='footnote-anchor-']")) {
 		if (isLocalFootnote(elem)) {
 			elem.classList.add("footnote");
 		}
@@ -150,22 +189,47 @@ function styleLocalFootnotes() {
 }
 
 // convert <img alt="📰" src="[...]" class="wp-smiley"> to a text node containing 📰
+// Tailwind size classes like w-[22px] and h-[22px] encode an SVG icon's intended size.
+// The site stylesheet that implements them is stripped, so apply the sizes directly —
+// otherwise an SVG with no width and height renders at full column width.
+function sizeTailwindSVGs() {
+	document.querySelectorAll("div.articleBody svg").forEach(svg => {
+		const classAttribute = svg.getAttribute("class") || "";
+		const width = classAttribute.match(/(?:^|\s)w-\[([\d.]+(?:px|em|rem))\]/);
+		if (width) {
+			svg.style.width = width[1];
+		}
+		const height = classAttribute.match(/(?:^|\s)h-\[([\d.]+(?:px|em|rem))\]/);
+		if (height) {
+			svg.style.height = height[1];
+		}
+	});
+}
+
 function removeWpSmiley() {
 	for (const img of document.querySelectorAll("img.wp-smiley[alt]")) {
 		 img.parentNode.replaceChild(document.createTextNode(img.alt), img);
 	}
 }
 
+// <https://github.com/Ranchero-Software/NetNewsWire/issues/3501>
+function removeInstapaperIgnoreElements() {
+	document.querySelectorAll(".instapaper_ignore").forEach(element => element.remove());
+}
+
 function processPage() {
+	// stripStyles must run first — wrapFrames sets aspect-ratio on fixed-size iframes, which stripStyles would remove.
+	stripStyles();
 	wrapFrames();
 	wrapTables();
 	inlineVideos();
-	stripStyles();
+	sizeTailwindSVGs();
 	constrainBodyRelativeIframes();
 	convertImgSrc();
 	flattenPreElements();
 	styleLocalFootnotes();
 	removeWpSmiley()
+	removeInstapaperIgnoreElements();
 	postRenderProcessing();
 }
 

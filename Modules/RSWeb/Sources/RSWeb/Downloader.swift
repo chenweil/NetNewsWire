@@ -22,7 +22,7 @@ public typealias DownloadCallback = @MainActor (DownloadResponse, Error?) -> Swi
 	fileprivate var taskContexts = [String: FeedRequestContext]()
 	private let cache = DownloadCache.shared
 
-	nonisolated private static let logger = Logger(subsystem: Bundle.main.bundleIdentifier!, category: "Downloader")
+	nonisolated private static let logger = Logger(subsystem: Logger.nnwSubsystem, category: "Downloader")
 
 	init(sessionConfiguration: URLSessionConfiguration = .ephemeral) {
 		sessionConfiguration.requestCachePolicy = .reloadIgnoringLocalCacheData
@@ -46,9 +46,13 @@ public typealias DownloadCallback = @MainActor (DownloadResponse, Error?) -> Swi
 		urlSession.invalidateAndCancel()
 	}
 
-	public func download(_ url: URL) async throws -> DownloadResponse {
+	public func download(_ url: URL, userAgentStyle: UserAgentStyle = .feed) async throws -> DownloadResponse {
+		try await download(URLRequest(url: url), userAgentStyle: userAgentStyle)
+	}
+
+	public func download(_ urlRequest: URLRequest, userAgentStyle: UserAgentStyle = .feed) async throws -> DownloadResponse {
 		try await withCheckedThrowingContinuation { continuation in
-			download(url) { downloadResponse, error in
+			download(urlRequest, userAgentStyle: userAgentStyle) { downloadResponse, error in
 				if let error {
 					continuation.resume(throwing: error)
 				} else {
@@ -58,12 +62,12 @@ public typealias DownloadCallback = @MainActor (DownloadResponse, Error?) -> Swi
 		}
 	}
 
-	public func download(_ url: URL, _ callback: @escaping DownloadCallback) {
+	public func download(_ url: URL, userAgentStyle: UserAgentStyle = .feed, _ callback: @escaping DownloadCallback) {
 		assert(Thread.isMainThread)
-		download(URLRequest(url: url), callback)
+		download(URLRequest(url: url), userAgentStyle: userAgentStyle, callback)
 	}
 
-	public func download(_ urlRequest: URLRequest, _ callback: @escaping DownloadCallback) {
+	public func download(_ urlRequest: URLRequest, userAgentStyle: UserAgentStyle = .feed, _ callback: @escaping DownloadCallback) {
 		assert(Thread.isMainThread)
 
 		guard let url = urlRequest.url else {
@@ -104,12 +108,21 @@ public typealias DownloadCallback = @MainActor (DownloadResponse, Error?) -> Swi
 		}
 
 		var urlRequestToUse = urlRequest
-		urlRequestToUse.addSpecialCaseUserAgentIfNeeded()
+		switch userAgentStyle {
+		case .feed:
+			break // the session's user agent
+		case .specialCaseFeed:
+			urlRequestToUse.setValue(UserAgent.extendedUserAgent, forHTTPHeaderField: HTTPRequestHeader.userAgent)
+		case .browser:
+			urlRequestToUse.setValue(UserAgent.browserUserAgent, forHTTPHeaderField: HTTPRequestHeader.userAgent)
+		}
+		urlRequestToUse.addSpecialCaseUserAgentIfNeeded() // Host requirements win over the requested style.
 		urlRequestToUse = context?.prepare(urlRequestToUse) ?? urlRequestToUse
 
 		let task = urlSession.dataTask(with: urlRequestToUse) { (data, response, error) in
 
-			if isCacheableRequest {
+			// Don’t cache errors — a retry should hit the network.
+			if isCacheableRequest && error == nil {
 				Self.logger.debug("Downloader: caching response for \(url)")
 				self.cache.add(cacheKey, data: data, response: response)
 			}
@@ -143,15 +156,14 @@ private extension Downloader {
 	func callAndReleaseCallbacks(_ cacheKey: String, url: URL, _ data: Data? = nil, _ response: URLResponse? = nil, _ error: Error? = nil) {
 		assert(Thread.isMainThread)
 
-		defer {
-			callbacks[cacheKey] = nil
-		}
-
 		guard let callbacksForURL = callbacks[cacheKey] else {
 			assertionFailure("Downloader: downloaded URL \(url) but no callbacks found")
 			Self.logger.fault("Downloader: downloaded URL \(url) but no callbacks found")
 			return
 		}
+
+		// Release before calling — a callback may start a new download of the same URL.
+		callbacks[cacheKey] = nil
 
 		let count = callbacksForURL.count
 		if count == 1 {
